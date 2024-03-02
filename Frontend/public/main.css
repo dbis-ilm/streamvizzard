@@ -1,0 +1,178 @@
+* {
+    font-family: "Noto Sans", sans-serif !important;
+}
+
+#app {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-align: center;
+    color: #444;
+}
+
+body {
+    margin: 0;
+}
+
+html, body, #app {
+    height: 100%;
+}
+
+.connection .main-path {
+    stroke: #c1c1c1 !important;
+}
+
+.clearfix:after {
+    content: "";
+    display: table;
+    clear: both;
+}
+
+.controlContainer {
+    text-align:left;
+    display:flex;
+    height:100%;
+    min-height: 30px;
+}
+
+.controlContainer .compSettings {
+    min-width:80px;
+    flex-grow: 1;
+    min-height: 30px; /* Required when no title is present to have the same height as with */
+}
+
+.controlContainer .compSettingsTitle {
+    color: white;
+    font-size: 16px;
+    line-height: 24px;
+    width:100px;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+    margin: 6px 10px 6px 6px;
+}
+
+.ctrlRow {
+    height: 30px;
+    position: relative;
+    top: -6px;
+}
+
+.ctrlRow:hover .ctrlIcon {
+    cursor: pointer;
+
+    visibility: visible;
+}
+
+.ctrlRow .ctrlIcon {
+    visibility: hidden;
+    padding-left: 3px;
+    padding-right: 3px;
+    font-size:26px;
+    color: #555;
+}
+
+.displayModeSetting {
+    display:flex;
+    flex-direction: row;
+    margin-top: 5px;
+    margin-bottom: 5px;
+    height: 25px;
+}
+
+.displayModeSettingTitle {
+    flex: 0 0 30%;
+
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+
+    text-align:left;
+}
+
+.displayModeSettingOption {
+    min-width: 1px; /* Otherwise it will not work with flex */
+    flex: 1;
+}
+
+.displayModeSettingReset {
+    flex: 0 0 30px;
+    cursor: pointer;
+    padding-top: 1px;
+}
+
+.loader {
+    font-size: 10px;
+    margin: 50px auto;
+    text-indent: -9999em;
+    width: 11em;
+    height: 11em;
+    border-radius: 50%;
+    background: #69C0FF;
+    background: -moz-linear-gradient(left, #69C0FF 10%, rgba(0,255,255, 0) 42%);
+    background: -webkit-linear-gradient(left, #69C0FF 10%, rgba(0,255,255, 0) 42%);
+    background: -o-linear-gradient(left, #69C0FF 10%, rgba(0,255,255, 0) 42%);
+    background: -ms-linear-gradient(left, #69C0FF 10%, rgba(0,255,255, 0) 42%);
+    background: linear-gradient(to right, #69C0FF 10%, rgba(0,255,255, 0) 42%);
+    position: relative;
+    -webkit-animation: load3 1.4s infinite linear;
+    animation: load3 1.4s infinite linear;
+    -webkit-transform: translateZ(0);
+    -ms-transform: translateZ(0);
+    transform: translateZ(0);
+}
+.loader:before {
+    width: 50%;
+    height: 50%;
+    background: #69C0FF;
+    border-radius: 100% 0 0 0;
+    position: absolute;
+    top: 0;
+    left: 0;
+    content: '';
+}
+.loader:after {
+    background: #444;
+    width: 75%;
+    height: 75%;
+    border-radius: 50%;
+    content: '';
+    margin: auto;
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
+}
+@-webkit-keyframes load3 {
+    0% {
+        -webkit-transform: rotate(0deg);
+        transform: rotate(0deg);
+    }
+    100% {
+        -webkit-transform: rotate(360deg);
+        transform: rotate(360deg);
+    }
+}
+
+.clickableIcon {
+    cursor: pointer;
+}
+
+.clickableIcon.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.clickableIcon:active {
+    color: #828282;
+}
+
+.noSelect {
+    -webkit-user-select: none; /* Safari */
+    -ms-user-select: none; /* IE 10 and IE 11 */
+    user-select: none; /* Standard syntax */
+}
+
+.hidden {
+    display: none;
+}

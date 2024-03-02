@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "StreamVizzard Backend"
+version = "0.8"
+authors = ["db-ilm"]
+description = "The backend of StreamVizzard"
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.12"
+
+
+[tool.poetry.group.base.dependencies]
+websockets = "*"
+Pympler  = "*"
+astunparse = "*"
+requests = "*"
+wres = "*"
+dill = "*"
+provInspector = { git = "https://github.com/dbis-ilm/streamvizzard-provinspector.git" }
+
+[tool.poetry.group.imageProcessing.dependencies]
+opencv-python = "*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
