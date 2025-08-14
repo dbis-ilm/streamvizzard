@@ -1,4 +1,4 @@
-import SelectControlTemplate from "@/components/templates/controls/SelectControlTemplate";
+import SelectControlTemplate from "@/components/pipeline/controls/SelectControlTemplate";
 import {Control} from "@/scripts/components/Control";
 
 export class SelectControl extends Control {
@@ -14,6 +14,7 @@ export class SelectControl extends Control {
     }
 
     setValue(key) {
-        this.vueContext.value = this.vueContext.options.find(el => el.key === key);
+        let option = this.vueContext.options.find(el => el.key === key);
+        if(option != null) this.vueContext.setData(option);
     }
 }

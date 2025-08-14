@@ -1,27 +1,28 @@
 from collections import deque
-from typing import Optional
+from typing import Optional, Deque
 
-from config import MONITORING_CONNECTIONS_MAX_THROUGHPUT_ELEMENTS
 from spe.runtime.debugger.debugTuple import DebugTuple
 from spe.runtime.debugger.history.historyState import HistoryState
-from spe.runtime.runtimeCommunicator import onTupleTransmitted, getHistoryState
-from spe.runtime.structures.timer import Timer
-from spe.runtime.structures.tuple import Tuple
+from spe.runtime.runtimeGateway import getRuntimeManager
+from spe.common.timer import Timer
+from spe.common.tuple import Tuple
+from streamVizzard import StreamVizzard
 
 
 class ConnectionMonitor:
     def __init__(self, connection):
+        self._monitor = getRuntimeManager().gateway.getMonitor()
         self.connection = connection
 
-        self.throughput = 0  # Calculated
+        self.throughput = 0  # Calculated [tup/s]
 
-        self._tupleQueue = deque()
+        self._tupleQueue: Deque[tuple[float, int]] = deque()
 
         self.totalTuples = 0
         self._throughputTuples = 0
 
     def registerTuple(self, t: Tuple):
-        historyState = getHistoryState()
+        historyState = t.operator.getHistoryState()
 
         if historyState == HistoryState.TRAVERSING_BACKWARD:
             self._undoTuple(t)
@@ -33,7 +34,7 @@ class ConnectionMonitor:
 
         self._calcThroughput()
 
-        onTupleTransmitted(self.connection)
+        self._monitor.onTupleTransmitted(self.connection)
 
     def _addThroughputTuple(self, count: int, timestamp: float, dt: Optional[DebugTuple]):
         self.totalTuples += count
@@ -42,26 +43,26 @@ class ConnectionMonitor:
         self._tupleQueue.append((timestamp, count))
 
         removed = None
-        if len(self._tupleQueue) > MONITORING_CONNECTIONS_MAX_THROUGHPUT_ELEMENTS:
+        if len(self._tupleQueue) > StreamVizzard.getConfig().MONITORING_CONNECTIONS_MAX_THROUGHPUT_ELEMENTS:
             removed = self._tupleQueue.popleft()
 
             self._throughputTuples -= removed[1]
 
         if dt is not None:
-            dt.registerAttribute("cmData" + str(self.connection.id), (timestamp, count))
+            dt.registerAttribute("cmData" + str(self.connection.id), (timestamp, count), True)
 
             # Register removed element to be restored if this action is undone
             if removed is not None:
-                dt.registerAttribute("cmLastE" + str(self.connection.id), removed)
+                dt.registerAttribute("cmLastE" + str(self.connection.id), removed, True)
 
     def _redoTuple(self, nextT: Tuple):
         dt = nextT.operator.getDebugger().getDT(nextT)
-        data = dt.getAttribute("cmData" + str(self.connection.id))
+        data = dt.getAttribute("cmData" + str(self.connection.id), None, True)
 
         self._addThroughputTuple(data[1], data[0], None)
 
-    def _undoTuple(self, prevT: Tuple):
-        dt = prevT.operator.getDebugger().getDT(prevT)
+    def _undoTuple(self, nextT: Tuple):
+        dt = nextT.operator.getDebugger().getDT(nextT)
 
         lastElm = self._tupleQueue.pop()
 
@@ -69,7 +70,7 @@ class ConnectionMonitor:
         self._throughputTuples -= lastElm[1]
 
         # Check if we need to add element that was removed by the add operation we undo
-        removed = dt.getAttribute("cmLastE" + str(self.connection.id))
+        removed = dt.getAttribute("cmLastE" + str(self.connection.id), None, True)
         if removed is not None:
             self._tupleQueue.appendleft(removed)
 
@@ -88,5 +89,6 @@ class ConnectionMonitor:
 
         deltaTime = lastElement[0] - firstElement[0]
 
+        # TODO: Calc should be based on time (e.g. 1 sec windows) and not on #tuples
         # One less tp since the first entry can only count as a starting time, otherwise tp is too high
         self.throughput = (max(0, (self._throughputTuples - 1)) / deltaTime) if deltaTime > 0 else 0

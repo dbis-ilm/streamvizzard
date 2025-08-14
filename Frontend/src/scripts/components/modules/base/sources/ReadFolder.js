@@ -11,30 +11,22 @@ export default class _ReadFolder extends Component {
     }
 
     builder(node) {
-        node.repeatCtrl  = new BoolControl(node, 'boolCtrl', false, 'Loop',
+        node.repeat  = new BoolControl(node, 'repeat', false, 'Loop',
             'Repeats from the start when reaching end of file');
-        node.srcCtrl = new StringControl(node, 'srcCtr', false, 'C:/Users/Timo/Downloads/dummySensor.txt');
-        node.rate = new NumControl(node, 'rate', false, 5, "Rate",
-            "How many lines per second are processed", 0)
+        node.path = new StringControl(node, 'path', false, '', "Path", "Source folder to read files from, ordered by modification date");
+        node.limitRate = new BoolControl(node, 'limitRate', false, 'Limit Rate',
+            'If the source should produce tuples in a fixed rate', true);
+        node.rate = new NumControl(node, 'rate', false, 30, "Rate",
+            "How many lines per second are processed", 0);
+
+        node.limitRate.onChangeCallback = (val) => {
+            node.rate.show = val;
+        };
 
         return this.onBuilderInitialized(node,
             new Display(node, STRING_DT.name),
             [],
             [{name: "Line", socket: strSocket}],
-            [node.repeatCtrl, node.srcCtrl, node.rate]);
-    }
-
-    getData(node) {
-        return {
-            path: node.srcCtrl.getValue(),
-            repeat: node.repeatCtrl.getValue() ? 1 : 0,
-            rate: node.rate.getValue()
-        }
-    }
-
-    setData(node, data) {
-        node.srcCtrl.setValue(data.path);
-        node.repeatCtrl.setValue(data.repeat === 1);
-        node.rate.setValue(data.rate);
+            [node.repeat, node.path, node.limitRate, node.rate]);
     }
 }

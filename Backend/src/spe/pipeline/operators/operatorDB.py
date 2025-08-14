@@ -1,11 +1,12 @@
 from __future__ import annotations
+
+import os
 from typing import TYPE_CHECKING
 
 import string
-from typing import Dict, Callable, Optional, List, Type
+from typing import Dict, Optional, List, Type
 
-import config
-
+from utils.utils import parseBool
 
 if TYPE_CHECKING:
     from spe.pipeline.operators.module import Module, MonitorDataType
@@ -48,16 +49,6 @@ def getPathByOperator(operator: Type[Operator]) -> Optional[str]:
 
         if path is not None:
             return module.name + "/" + path
-
-    return None
-
-
-def getJSONEncoderForDataType(data) -> Optional[Callable]:
-    for module in __modules.values():
-        encoder = module.getJSONEncoder(type(data))
-
-        if encoder is not None:
-            return encoder
 
     return None
 
@@ -105,5 +96,29 @@ def _registerImageProc():
     __registerModule(ImageProcModule)
 
 
+def _registerSignalProc():
+    from spe.pipeline.operators.signalProc.signalProcModule import SignalProcModule
+
+    __registerModule(SignalProcModule)
+
+
+def _registerDataCleaning():
+    from spe.pipeline.operators.dataCleaning.dataCleaningModule import DataCleaningModule
+
+    __registerModule(DataCleaningModule)
+
+
+def _registerExamples():
+    if not parseBool(os.environ.get("INCLUDE_EXAMPLES", "true")):
+        return
+
+    from spe.pipeline.operators.examples.examplesModule import ExamplesModule
+
+    __registerModule(ExamplesModule)
+
+
 _registerBase()
-_registerImageProc() if config.MODULE_USE_IMAGE_PROCESSING else None
+_registerImageProc()
+_registerSignalProc()
+_registerDataCleaning()
+_registerExamples()

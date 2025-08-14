@@ -1,8 +1,11 @@
 import Rete from "rete";
 import {EVENTS, executeEvent} from "@/scripts/tools/EventHandler";
+import {v4} from 'uuid';
 
 export class Component extends Rete.Component {
     constructor(internalName, displayName, pathIdentifier, source=false){
+        // The internal name should be the same as the class name in backend
+        // to allow generating UI saveFiles from the backend pipeline!
         super(internalName);
 
         this.displayName = displayName
@@ -11,13 +14,9 @@ export class Component extends Rete.Component {
         this.source = source;
     }
 
-    // eslint-disable-next-line no-unused-vars
-    builder(node) {
-        //Will be overridden
-    }
-
     onBuilderInitialized(node, display, inputs, outputs, controls) {
         node.viewName = this.displayName;
+        node.uuid = v4();  // ID unique for this operator, persistent across parameter changes
 
         for (let i in inputs) {
             const inpData = inputs[i];
@@ -27,7 +26,10 @@ export class Component extends Rete.Component {
         }
 
         node.display = display;
-        if(display != null) node.addControl(display);
+        if(display != null) {
+            display.dataMonitor = true;
+            node.addControl(display);
+        }
 
         for (let control of controls) node.addControl(control);
 
@@ -45,22 +47,24 @@ export class Component extends Rete.Component {
     }
 
     onControlValueChanged(ctrl, node, oldVal) {
-        this.sendDataUpdate(node, ctrl);
+        ctrl.onValueChanged();
+
+        node.component.editor.onOperatorDataUpdated(node, ctrl);
 
         executeEvent(EVENTS.NODE_PARAM_CHANGED, [node, ctrl, oldVal]);
     }
 
     updateVisuals(node) {
         node.update();
+        this.updateConnections(node);
+    }
+
+    updateConnections(node) {
         node.component.editor.view.updateConnections({ node: node });
     }
 
     onSocketsChanged(node) {
         if(node.display != null) node.display.onSocketsChanged(node);
-    }
-
-    sendDataUpdate(node, ctrl) {
-        node.component.editor.onOperatorDataUpdated(node, ctrl);
     }
 
     sendMetaDataUpdate(node) {
@@ -70,17 +74,17 @@ export class Component extends Rete.Component {
     setDataMonitorState(node, enabled, trigger = true) {
         node.dataMonitorEnabled = enabled;
 
-        node.vueContext.updateMonitorDisplay();
+        this.updateConnections(node);
 
         if(trigger) node.component.editor.trigger("nodeMonitorStateChanged", {"node": node, "state": enabled});
 
         node.component.sendMetaDataUpdate(node);
     }
 
-    toggleStatsMonitor(node) {
-        node.statsMonitorEnabled = !node.statsMonitorEnabled;
+    setOperatorSettingsState(node, show) {
+        node.settingsEnabled = show;
 
-        node.component.sendMetaDataUpdate(node);
+        node.component.updateConnections(node);
     }
 
     async updateSockets(node, socksIn, socksOut, inType, outType) {
@@ -156,7 +160,8 @@ export class Component extends Rete.Component {
 
         return {
             id: node.id,
-            path: path
+            path: path,
+            uuid: node.uuid
         };
     }
 
@@ -283,15 +288,12 @@ export class Component extends Rete.Component {
         return {
             state: {
                 sendData: node.dataMonitorEnabled,
-                sendStats: node.statsMonitorEnabled
             },
             dMode: node.display != null ? node.display.getDisplayData() : null
         };
     }
 
     setMonitorData(node, data) {
-        node.statsMonitorEnabled = data.state.sendStats;
-
         if(node.display != null) node.display.setDisplayData(data.dMode);
 
         this.setDataMonitorState(node, data.state.sendData, true); //TODO: COMBINE THIS TWO FUNCTIONS?
@@ -303,10 +305,6 @@ export class Component extends Rete.Component {
 
     setBreakpoints(node, bps) {
         node.vueContext.updateBreakpoints(bps);
-    }
-
-    setStats(node, stats) {
-        node.vueContext.updateStatsData(stats);
     }
 
     setHeatmapRating(node, rating) {
@@ -329,12 +327,32 @@ export class Component extends Rete.Component {
         if(node.display != null) node.display.setData(data);
     }
 
-    setData() {}
+    async setData(node, data) {
+        for(let ctrl of node.controls) {
+            let obj = ctrl[1];
+            if(obj.dataMonitor) continue;
 
-    getData() { return null; }
+            if(obj.key in data) obj.setValue(data[obj.key]);
+        }
+    }
 
-    reset(node) {
-        if(node.display != null) node.display.reset();
-        node.vueContext.reset();
+    getData(node) {
+        let data = {};
+
+        // Collect all values from all controls (except dataMonitor)
+
+        for(let ctrl of node.controls) {
+            let obj = ctrl[1];
+            if(obj.dataMonitor) continue;
+
+            data[obj.key] = obj.getValue();
+        }
+
+        return data;
+    }
+
+    reset(node, nodeData=true, displayData=true) {
+        if(node.display != null && displayData) node.display.reset();
+        if(nodeData) node.vueContext.reset();
     }
 }

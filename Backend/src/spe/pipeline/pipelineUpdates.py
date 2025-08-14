@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import logging
+import traceback
 from abc import ABC, abstractmethod
 from typing import Dict, Optional
 
 from spe.pipeline.connection import Connection
 from spe.pipeline.operators.operator import Operator
 from spe.pipeline.pipeline import Pipeline
-from spe.pipeline.pipelineParser import PipelineManager
+from spe.pipeline.pipelineManager import PipelineManager
 from utils.utils import printWarning
 
 
@@ -31,7 +33,10 @@ class PipelineUpdate(ABC):
     def redo(self):
         self.execute()
 
-    def isTracked(self):
+    def isTracked(self):  # If this update is tracked inside the history
+        return True
+
+    def isLogicalChange(self):  # If this update describes an operator/connection change (no meta or ui updates)
         return True
 
     @staticmethod
@@ -131,10 +136,11 @@ class OperatorRemovedPU(PipelineUpdate):
 
 
 class OperatorDataUpdatedPU(PipelineUpdate):
-    def __init__(self, updateID: int, opID: int, opData: Dict, param: str):
+    def __init__(self, updateID: int, opID: int, opUUID: str, opData: Dict, param: str):
         super().__init__(updateID)
 
         self.opID = opID
+        self.opUUID = opUUID
         self.opData = opData
         self.param = param
         self._prevData = None
@@ -149,7 +155,11 @@ class OperatorDataUpdatedPU(PipelineUpdate):
         self._prevData = op.getData()
 
         if op is not None:
-            op.setData(self.opData)
+            try:
+                op.setData(self.opData)
+                op.uuid = self.opUUID
+            except Exception:
+                logging.log(logging.ERROR, traceback.format_exc())
 
     def undo(self):
         op = self.pipeline.getOperator(self.opID)
@@ -158,11 +168,15 @@ class OperatorDataUpdatedPU(PipelineUpdate):
             printWarning("Operator to revert data [" + str(self.opID) + "] not found!")
             return
 
-        op.setData(self._prevData)
+        try:
+            op.setData(self._prevData)
+            # We currently do not undo uuid [not required]
+        except Exception:
+            logging.log(logging.ERROR, traceback.format_exc())
 
     @staticmethod
     def parse(updateID: int, data: Dict) -> OperatorDataUpdatedPU:
-        return OperatorDataUpdatedPU(updateID, data["opID"], data["opData"], data["ctrlKey"])
+        return OperatorDataUpdatedPU(updateID, data["opID"], data["opUUID"], data["opData"], data["ctrlKey"])
 
 
 class OperatorMetaDataUpdatedPU(PipelineUpdate):
@@ -183,6 +197,9 @@ class OperatorMetaDataUpdatedPU(PipelineUpdate):
         ...  # Unused
 
     def isTracked(self):
+        return False
+
+    def isLogicalChange(self):
         return False
 
     @staticmethod
@@ -219,7 +236,8 @@ class ConnectionAddedPU(PipelineUpdate):
             if inSocket is None or outSocket is None:
                 return
 
-            Connection.create(self.pipeline, self.conID, inSocket, outSocket)
+            newCon = Connection.create(self.conID, inSocket, outSocket)
+            self.pipeline.registerConnection(newCon)
         else:
             ConnectionAddedPU.restoreConnection(self.pipeline, self.conID)
 
@@ -318,3 +336,6 @@ class GenericUpdatePU(PipelineUpdate):
 
     def undo(self):
         pass
+
+    def isLogicalChange(self):
+        return False

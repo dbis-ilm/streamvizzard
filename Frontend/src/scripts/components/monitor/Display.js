@@ -1,5 +1,5 @@
 import Rete from "rete";
-import DisplayTemplate from "@/components/templates/displays/DisplayTemplate";
+import DisplayTemplate from "@/components/features/monitor/displays/DisplayTemplate";
 
 export class Display extends Rete.Control {
     constructor(node, dataType = null, tooltip = "") {

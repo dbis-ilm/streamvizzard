@@ -4,15 +4,18 @@ from threading import Timer
 from typing import Optional, List
 
 from spe.pipeline.operators.base.dataTypes.window import Window
-from spe.pipeline.operators.operator import Operator
+from spe.pipeline.operators.base.operators.windows.windowOperator import WindowOperator
+from spe.runtime.compiler.definitions.compileDefinitions import CompileFramework, CompileComputeMode, \
+    CompileParallelism, CompileLanguage
+from spe.runtime.compiler.definitions.compileOpFunction import CodeTemplateCOF
+from spe.runtime.compiler.definitions.compileOpSpecs import CompileOpSpecs
 from spe.runtime.debugger.history.historyState import HistoryState
-from spe.runtime.runtimeCommunicator import getHistoryState
-from spe.runtime.structures.tuple import Tuple
+from spe.common.tuple import Tuple
 
 
-class TumblingWindowTime(Operator):
+class TumblingWindowTime(WindowOperator):
     def __init__(self, opID: int):
-        super(TumblingWindowTime, self).__init__(opID, 1, 1, pipelineBreaker=True, supportsDebugging=False)
+        super(TumblingWindowTime, self).__init__(opID, 1, 1, supportsDebugging=False)
 
         self.value = 0
 
@@ -44,7 +47,7 @@ class TumblingWindowTime(Operator):
 
     def _distributeBuffer(self):
         # When the pipeline is paused this timer shouldn't trigger!
-        if self.isDebuggingEnabled() and getHistoryState() != HistoryState.INACTIVE:
+        if self.isDebuggingEnabled() and self.getHistoryState() != HistoryState.INACTIVE:
             return
 
         hasConnections = False
@@ -72,3 +75,29 @@ class TumblingWindowTime(Operator):
         self.buffer.append(tupleIn)
 
         return None  # Distribution will be handled by timer
+
+    # -------------------------- Compilation -------------------------
+
+    def deriveOutThroughput(self, inTp: float):
+        return 1 / self.value
+
+    def getCompileSpecs(self) -> List[CompileOpSpecs]:
+        # window_all for non-keyed streams, window else
+        def getPyFlinkCode(compileConfig):
+            from spe.runtime.compiler.codegeneration.frameworks.pyFlink.pyFlinkCodeTemplate import PyFlinkCodeTemplate
+
+            pyFlinkCode = PyFlinkCodeTemplate({
+                PyFlinkCodeTemplate.Section.IMPORTS: """
+            from pyflink.datastream.window import TumblingEventTimeWindows
+            from pyflink.common.time import Time""",
+                PyFlinkCodeTemplate.Section.ASSIGNMENTS: f"""
+            $inDS.window_all(TumblingEventTimeWindows.of(Time.seconds({self.value})))"""})  # Currently only for non-keyed streams
+
+            return pyFlinkCode
+
+        return [CompileOpSpecs.getSVDefault(),
+                CompileOpSpecs([CompileFramework.PYFLINK],
+                               [CompileLanguage.PYTHON],
+                               [CompileComputeMode.CPU],
+                               CompileParallelism.all(),
+                               compileFunction=CodeTemplateCOF(CodeTemplateCOF.Type.WINDOW, getPyFlinkCode))]

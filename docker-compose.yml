@@ -1,0 +1,42 @@
+x-shared: &sv-args
+  INCLUDE_EXAMPLES: "false"  # Builds and includes additional example data processing operators, increases image size
+
+services:
+  frontend:
+    build:
+      context: ./Frontend
+      dockerfile: Dockerfile
+      args:
+        <<: *sv-args
+    container_name: svfrontend
+    networks:
+      - svNetwork
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+
+  backend:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+      args:
+        <<: *sv-args
+    volumes: 
+      - /local/mount/folder:/home/streamvizzard  # Accessible files to the container
+      - /local/mount/folder:/opt/streamvizzard/out  # Generated output files by the container
+    environment:
+      <<: *sv-args
+      DOCKER_BUILDKIT: "1"
+      DOCKER: "true"
+    container_name: svbackend
+    networks:
+      - svNetwork
+    restart: unless-stopped
+    # command: ["--runtimeOnly"]  # Disables all development functionality for pure pipeline execution
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+
+networks:
+  svNetwork:
+    name: svNetwork

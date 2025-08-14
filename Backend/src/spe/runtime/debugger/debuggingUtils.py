@@ -2,15 +2,20 @@ from typing import Optional
 
 from spe.pipeline.operators.operator import Operator
 from spe.runtime.debugger.debugTuple import DebugTuple
-from spe.runtime.structures.tuple import Tuple
+from spe.common.tuple import Tuple
+from utils.messages import Messages
 
 
 def retrieveStoredDTRef(operator: Operator, tup: Tuple, refTupleUUID: str) -> Optional[DebugTuple]:
-    addedTupID: Tuple = operator.getDebugger().getDT(tup).getAttribute(refTupleUUID)
+    addedTupID: Optional[Tuple] = operator.getDebugger().getDT(tup).getAttribute(refTupleUUID)
+
+    if addedTupID is None:  # No tuple stored
+        return None
+
     inputDt = operator.getDebugger().getDTByTupleID(addedTupID)
 
     if inputDt is None:
-        operator.onExecutionError("DebugTuple not available, memory limits to small?")
+        operator.onExecutionError(Messages.DEBUGGER_DT_NOT_AVAILABLE.value)
         return None
 
     return inputDt

@@ -1,0 +1,17 @@
+services:
+  kafkaproducer:
+    container_name: kafkaproducer
+    build:
+      dockerfile: Dockerfile
+      context: .
+    working_dir: /app
+    environment:
+      - RATE_LIMIT=940
+      - MAX_TUPLES=100000
+      - DATA_FILE=/data/energyData.json
+      - TOPIC_NAME=my-topic
+      - PRODUCER_THREADS=1
+      - KAFKA_BROKER=localhost:9092
+    volumes:
+    - /local/mount/folder:/data
+    network_mode: host

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 from enum import Enum
 from typing import TYPE_CHECKING, Callable, Optional, Awaitable, Any, List
 
-from spe.runtime.structures.tuple import Tuple
+from spe.common.tuple import Tuple
 
 if TYPE_CHECKING:
     from spe.pipeline.pipelineUpdates import PipelineUpdate
@@ -20,6 +19,10 @@ class DebugStepType(Enum):
     ON_STREAM_PROCESS_TUPLE = "spS"  # When a stream processes the next tuple
     ON_SOURCE_PRODUCED_TUPLE = "pcT"  # When a source operator has produced a new tuple
 
+    def isInitial(self) -> bool:
+        return (self == DebugStepType.ON_SOURCE_PRODUCED_TUPLE
+                or self == DebugStepType.ON_STREAM_PROCESS_TUPLE)
+
     @staticmethod
     def parse(name: str):
         for d in DebugStepType:
@@ -29,16 +32,21 @@ class DebugStepType(Enum):
         return None
 
 
+class StepContinuation:
+    def __init__(self, target: DebugStepType, func: Callable[[Tuple], Awaitable[Any]],
+                 canCont: Optional[Callable[[Tuple], bool]] = None):
+        self.target = target
+        self.func = func
+        self.canCont = canCont
+
+
 class DebugStep:
     def __init__(self, debugger: OperatorDebugger, sType: DebugStepType, time: float, debugTuple: DebugTuple,
-                 prevDT: DebugTuple, undoFunc: Optional[Callable], redoFunc: Optional[Callable],
-                 contFunc: Optional[Callable[[Tuple], Awaitable[Any]]]):
+                 undoFunc: Optional[Callable], redoFunc: Optional[Callable], cont: Optional[StepContinuation]):
 
         self.debugger = debugger
 
-        # DT that where processed by this step or before this step
-        self.debugTuple = debugTuple  # This is the DT that results after the step (REDO)
-        self.prevDebugTuple = prevDT  # This is the DT before the step (UNDO)
+        self.debugTuple = debugTuple  # This is the DT that results after the step
 
         self._registerDT(True)
 
@@ -53,7 +61,7 @@ class DebugStep:
         self._redoFunc = redoFunc
         self._undoFunc = undoFunc
 
-        self._contFunc = contFunc
+        self.cont = cont
 
         self.pipelineUpdates: Optional[List[PipelineUpdate]] = None
 
@@ -68,9 +76,6 @@ class DebugStep:
     def _registerDT(self, register: bool):
         self.debugTuple.refCount += (1 if register else -1)
 
-        if self.prevDebugTuple is not None:
-            self.prevDebugTuple.refCount += (1 if register else -1)
-
     def registerPipelineUpdate(self, pu: PipelineUpdate):
         if self.pipelineUpdates is None:
             self.pipelineUpdates = []
@@ -80,11 +85,11 @@ class DebugStep:
     def hasUpdates(self) -> bool:
         return self.pipelineUpdates is not None
 
-    def executeUndo(self, pT: Tuple, nT: Tuple):
+    def executeUndo(self, tup: Tuple):
         self.debugger.getDebugger().preDebugStepExecution(self)
 
         if self._undoFunc is not None:
-            self._undoFunc(pT, nT)
+            self._undoFunc(tup)
 
             # Send after execution to make sure UI has correct state after data is sent
             self.debugger.getDebugger().onDebugStepExecuted(self, True)
@@ -94,7 +99,7 @@ class DebugStep:
             for pu in reversed(self.pipelineUpdates):
                 pu.undo()
 
-    def executeRedo(self, pT: Tuple, nT: Tuple):
+    def executeRedo(self, tup: Tuple):
         self.debugger.getDebugger().preDebugStepExecution(self)
 
         # Redo pipeline changes before the step is redone
@@ -106,14 +111,7 @@ class DebugStep:
             # Send before execution to make sure UI has correct state before data is sent
             self.debugger.getDebugger().onDebugStepExecuted(self, False)
 
-            self._redoFunc(pT, nT)
+            self._redoFunc(tup)
 
-    def executeContinue(self):
-        if self._contFunc is not None:
-            asyncio.ensure_future(self._continuationFunction(), loop=self.debugger.getOperator().getEventLoop())
-
-    async def _continuationFunction(self):
-        # Wait until pipeline execution is really continued, this is crucial to not get rejected by regStep in opDebugger
-        await self.debugger.getDebugger().getHistoryAsyncioEvent().wait()
-
-        await self._contFunc(self.debugTuple.getTuple())
+    def canContinueStep(self) -> bool:
+        return self.cont is not None and (self.cont.canCont is None or self.cont.canCont(self.debugTuple.getTuple()))

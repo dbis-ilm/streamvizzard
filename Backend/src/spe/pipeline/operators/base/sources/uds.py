@@ -1,7 +1,7 @@
 import json
 
 from spe.pipeline.operators.source import Source
-from utils.utils import instantiateUserDefinedClass
+from spe.common.udfCompiler import instantiateUserDefinedClass
 
 
 class UDS(Source):

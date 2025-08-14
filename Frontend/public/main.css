@@ -1,24 +1,60 @@
+:root {
+    --main-font-color: #444; /* Font, Menu, ContextMenu, StartButton */
+    --main-bg-color: #FFF; /* Page */
+    --main-hover-color: #888; /* Hover on Menu, ContextMenu */
+    --main-border-color: #dedede;
+    --second-bg-color: rgb(247, 247, 247); /* Sidebar, White Buttons, Modals */
+
+    /* Second buttons = secBg buttons with dark border in modal */
+    --second-button-bg-color: var(--second-bg-color);
+    --second-button-border-color: var(--main-font-color);
+
+    --button-border-radius: 4px;
+
+    --window-border-radius: 4px;
+    --window-buton-bg-color: var(--main-bg-color);
+    --window-buton-border-color: var(--main-font-color);
+
+    --node-border: 2px solid var(--main-hover-color);
+    --node-border-radius: 10px;
+    --connection-color: #c1c1c1;
+
+    --form-font-size: 1rem;
+    --form-font-size-small: 0.85rem;
+}
+
 * {
     font-family: "Noto Sans", sans-serif !important;
+    scrollbar-width: thin;
 }
 
 #app {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-align: center;
-    color: #444;
+    color: var(--main-font-color);
 }
 
 body {
     margin: 0;
+    overflow: hidden;
 }
 
 html, body, #app {
     height: 100%;
+    background: var(--main-bg-color);
 }
 
-.connection .main-path {
-    stroke: #c1c1c1 !important;
+input, textarea {
+    font-size: var(--form-font-size);
+}
+
+.connection path.main-path {
+    stroke: var(--connection-color);
+}
+
+.connection.hovered path.main-path{
+    stroke: var(--main-hover-color);
 }
 
 .clearfix:after {
@@ -31,12 +67,12 @@ html, body, #app {
     text-align:left;
     display:flex;
     height:100%;
-    min-height: 30px;
+    min-height: 36px;
 }
 
 .controlContainer .compSettings {
     min-width:80px;
-    flex-grow: 1;
+    flex: 1 1 auto;
     min-height: 30px; /* Required when no title is present to have the same height as with */
 }
 
@@ -49,6 +85,7 @@ html, body, #app {
     overflow: hidden;
     white-space: nowrap;
     margin: 6px 10px 6px 6px;
+    flex: 0 0 auto;
 }
 
 .ctrlRow {
@@ -102,7 +139,7 @@ html, body, #app {
 
 .loader {
     font-size: 10px;
-    margin: 50px auto;
+    margin: 0 auto;
     text-indent: -9999em;
     width: 11em;
     height: 11em;
@@ -123,7 +160,7 @@ html, body, #app {
 .loader:before {
     width: 50%;
     height: 50%;
-    background: #69C0FF;
+    /*background: #69C0FF;*/
     border-radius: 100% 0 0 0;
     position: absolute;
     top: 0;
@@ -131,7 +168,7 @@ html, body, #app {
     content: '';
 }
 .loader:after {
-    background: #444;
+    background: var(--main-font-color);
     width: 75%;
     height: 75%;
     border-radius: 50%;
@@ -158,7 +195,7 @@ html, body, #app {
     cursor: pointer;
 }
 
-.clickableIcon.disabled {
+.disabled {
     opacity: 0.5;
     pointer-events: none;
 }
@@ -174,5 +211,203 @@ html, body, #app {
 }
 
 .hidden {
-    display: none;
+    display: none!important;
+}
+
+.resizableHandleNW {
+    -webkit-transform: rotate(180deg);
+    -moz-transform: rotate(180deg);
+    -ms-transform: rotate(180deg);
+    -o-transform: rotate(180deg);
+    transform: rotate(180deg);
+
+    left: -1px !important;
+    top: -1px !important;
+}
+
+.resizableHandleNE {
+    -webkit-transform: rotate(270deg);
+    -moz-transform: rotate(270deg);
+    -ms-transform: rotate(270deg);
+    -o-transform: rotate(270deg);
+    transform: rotate(270deg);
+
+    right: -1px !important;
+    top: -1px !important;
+}
+
+.resizableCtrl {
+    display: flex;
+}
+
+.resizableCtrl > div {
+    flex-grow: 1;
+}
+
+.alignedSelect .vs__selected {
+    padding-left: 0!important;
+    margin-left: 0!important;
+}
+
+
+.modal {
+    border: 1px solid var(--main-border-color)!important;
+    top: 9%!important;
+    border-radius: var(--window-border-radius)!important;
+}
+
+.modalFooterButtons {
+    display:inline-block;
+    margin-top:10px;
+}
+
+.modalFooterButtons > * {
+    min-width: 85px;
+    display:inline-block;
+    margin: 0 2px;
+}
+
+.limitedText {
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.mirrorY {
+    -webkit-transform: rotate(180deg);
+    -moz-transform: rotate(180deg);
+    -ms-transform: rotate(180deg);
+    -o-transform: rotate(180deg);
+    transform: rotate(180deg);
+}
+
+.errorMsg {
+    margin-top: 5px;
+    color: red;
+}
+
+.warningMsg {
+    color: #f09b00;
+}
+
+.successMsg {
+    margin-top: 5px;
+    color: rgb(0, 100, 220);
+}
+
+/* --------- Form Elements --------- */
+
+.formInputField {
+    height: 2rem;
+    text-align: center;
+    border:solid 1px var(--main-border-color);
+    border-radius: var(--button-border-radius);
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+input.formInputField {
+    /* move text a little to the right to match selects */
+    padding-left: 5px;
+}
+
+.formInputField.small {
+    font-size: var(--form-font-size-small);
+}
+
+.formInputField.alignLeft, .formInputLabel.alignLeft {
+    text-align: left;
+}
+
+.formInputContainer {
+    display:flex;
+    flex-direction: row;
+    margin-top: 10px;
+}
+
+.formInputLabel {
+    cursor: default;
+    padding-top: 0.5em; /* Center vertically */
+    flex: 0 0 auto;
+}
+
+/* --------- Windows --------- */
+
+.window {
+    background: var(--second-bg-color);
+    border: 2px solid var(--main-border-color);
+    border-radius: var(--window-border-radius);
+    padding: 2px;
+}
+
+.window .windowContent {
+    padding: 10px;
+}
+
+.window .windowTitle {
+    font-weight: bold;
+    cursor: default;
+}
+
+/* --------- Sidebar Docks --------- */
+
+.dock .openCloseButton {
+    position: absolute;
+    top: 0;
+    cursor: pointer;
+    height: 100vh;
+    width: 16px;
+    box-sizing: content-box;
+    background: rgb(255,255,255);
+    border-left: 2px solid var(--main-border-color);
+    border-right: 2px solid var(--main-border-color);
+}
+
+.dock .openCloseButton.opened.left {
+    right: -16px;
+    background: linear-gradient(90deg, var(--second-bg-color) 0%, rgb(200, 200, 200) 300%);
+}
+
+.dock .openCloseButton.opened.right {
+    left: -16px;
+    background: linear-gradient(-90deg, var(--second-bg-color) 0%, rgb(200, 200, 200) 300%);
+}
+
+.dock .openCloseButton.closed.left {
+    right: -16px;
+    background: linear-gradient(-90deg, var(--second-bg-color) 0%, rgb(200, 200, 200) 100%);
+}
+
+.dock .openCloseButton.closed.right {
+    left: -16px;
+    background: linear-gradient(90deg, var(--second-bg-color) 0%, rgb(200, 200, 200) 100%);
+}
+
+.dock .openCloseButton > i {
+    position: absolute;
+    font-size: 20px;
+    top: calc(50% - 27px);
+    opacity: 0.5;
+    left: -2px;
+}
+
+/* --------- Slider overrides --------- */
+
+.vue-slider-process {
+    background: #92b6f0 !important;
+}
+
+.vue-slider-rail {
+    background-color: #c2d6f6 !important;
+}
+
+.vue-slider-rail:hover {
+    cursor: pointer !important;
+}
+
+/* --------- VSelect overrides --------- */
+
+.vs__selected {
+    padding: 0!important;
 }

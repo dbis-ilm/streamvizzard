@@ -6,7 +6,7 @@ import numpy as np
 
 from spe.pipeline.operators.imageProc.dataTypes.image import Image
 from spe.pipeline.operators.operator import Operator
-from spe.runtime.structures.tuple import Tuple
+from spe.common.tuple import Tuple
 
 
 class Convert(Operator):
@@ -45,4 +45,3 @@ class Convert(Operator):
         elif self.mode == 2:
             res = res.astype(np.float32)
         return self.createTuple((Image(res),))
-

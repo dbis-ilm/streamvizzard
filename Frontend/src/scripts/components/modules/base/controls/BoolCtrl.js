@@ -1,4 +1,4 @@
-import BoolControlTemplate from "@/components/templates/controls/BoolControlTemplate";
+import BoolControlTemplate from "@/components/pipeline/controls/BoolControlTemplate";
 import {Control} from "@/scripts/components/Control";
 
 export class BoolControl extends Control {

@@ -27,7 +27,8 @@ function install(editor, {
         editor.trigger('hidecontextmenu');
     });
 
-    editor.on('contextmenu', ({ e, node }) => {
+    // Added created callback
+    editor.on('contextmenu', ({ e, node, nodeCreatedCallback }) => {
         e.preventDefault();
         e.stopPropagation();
 
@@ -37,9 +38,9 @@ function install(editor, {
 
         if(node) {
             menu = new NodeMenu(editor, { searchBar: false, delay }, vueComponent, typeof nodeItems === 'function' ? nodeItems(node) : nodeItems);
-            menu.show(x, y, { node });
+            menu.show(x, y, { node, e }); // Added event to pass to node callbacks
         } else {
-            menu = new MainMenu(editor, { searchBar, searchKeep, delay }, vueComponent, { items, allocate, rename });
+            menu = new MainMenu(editor, { searchBar, searchKeep, delay }, vueComponent, { items, allocate, rename, nodeCreatedCallback });
             menu.show(x, y);
         }
     });

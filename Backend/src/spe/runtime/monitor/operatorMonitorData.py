@@ -5,6 +5,7 @@ import logging
 import traceback
 from typing import Optional, TYPE_CHECKING
 
+from spe.pipeline.operators.operatorDB import getDisplayDataType
 from spe.runtime.monitor.dataInspect import DataInspect
 
 if TYPE_CHECKING:
@@ -79,8 +80,8 @@ class OperatorMonitorData:
             if dataToDisplay is None:  # Not even an inspecting type found
                 return {"dType": None}
 
-            # Reset display mode if data type changed and if this is not initial setup
-            if newType != self._displayDataType and self._displayDataType is not None:
+            # Reset display mode if data type changed and (if this is not initial setup or mode is not present in type)
+            if newType != self._displayDataType and (self._displayDataType is not None or not newType.hasDisplayMode(self._displayMode)):
                 self._displayMode = 0
 
             self._displayDataType = newType
@@ -88,14 +89,14 @@ class OperatorMonitorData:
 
         dataType = self._displayDataType
 
-        # Handle data inspect
+        # Handle data inspect TODO: REWORK INSPECT (0 length lists drop out of ARRAY:IMG, ARRAY:NUMBER and dont recover)
 
         if self._displayDataType.isInspectType():
             # Only send structure if it has changed, otherwise None
             structure = self._inspect.getStructureIfChanged(dataToDisplay)
             res["struc"] = json.loads(structure) if structure is not None else {}
 
-            # If no selection than just return structure info
+            # If no selection then just return structure info
             if self._inspect.hasSelection():
                 if self._inspect.wasInspectChanged(True):
                     newDisplayMode, dataToDisplay = self._findDisplayMode(self._inspect.getData(dataToDisplay))
@@ -106,7 +107,7 @@ class OperatorMonitorData:
 
                     self._inspect.inspectDataType = newDisplayMode
                 else:
-                    dataToDisplay = self._inspect.getData(dataToDisplay)  # TODO: we might lose transformation DT here (same as above)
+                    dataToDisplay = self._inspect.getData(dataToDisplay)  # TODO: we might lose compiler DT here (same as above)
             else:
                 res["dType"] = None
                 return res
@@ -127,9 +128,7 @@ class OperatorMonitorData:
         return res
 
     def _findDisplayMode(self, dataToDisplay):
-        from spe.pipeline.operators.operatorDB import getDisplayDataType
-
-        # Transform data until we reach a non transformation type
+        # Transform data until we reach a non compiler type
         while True:
             # Infer data type for display
             try:

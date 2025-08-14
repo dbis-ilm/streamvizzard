@@ -3,7 +3,7 @@ from typing import Optional
 
 from spe.pipeline.operators.imageProc.dataTypes.image import Image
 from spe.pipeline.operators.operator import Operator
-from spe.runtime.structures.tuple import Tuple
+from spe.common.tuple import Tuple
 
 
 class ExtractROI(Operator):
@@ -30,4 +30,4 @@ class ExtractROI(Operator):
         return {"x": self.x, "y": self.y, "w": self.w, "h": self.h}
 
     def _execute(self, tupleIn: Tuple) -> Optional[Tuple]:
-        return self.createTuple((Image(tupleIn.data[0].mat[self.y:self.y+self.h, self.x:self.x+self.w]),))
+        return self.createTuple((Image(tupleIn.data[0].mat[self.y:self.y+self.h, self.x:self.x+self.w].copy()),))

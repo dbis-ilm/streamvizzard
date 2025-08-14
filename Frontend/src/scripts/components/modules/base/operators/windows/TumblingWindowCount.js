@@ -5,7 +5,7 @@ import {NumControl} from "@/scripts/components/modules/base/controls/NumberCtrl"
 
 export default class _TumblingWindowCount extends Component {
     constructor(pathIdentifier){
-        super("TumblingWindowCount", "Tumb. Window C", pathIdentifier);
+        super("TumblingWindowCount", "Tumb. Window Count", pathIdentifier);
     }
 
     builder(node) {
@@ -16,15 +16,5 @@ export default class _TumblingWindowCount extends Component {
             [{name: "Any", socket: anySocket}],
             [{name: "Window", socket: anySocket}], //TODO: DATATYPE FOR ARRAY?
             [node.value]);
-    }
-
-    getData(node) {
-        return {
-            value: node.value.getValue()
-        }
-    }
-
-    setData(node, data) {
-        node.value.setValue(data.value);
     }
 }

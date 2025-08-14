@@ -88,7 +88,9 @@ class PipelineHistoryBranch:
         return currentParent
 
     def getStep(self, stepID: int):
-        return self._steps[stepID - self.stepIDOffset]
+        idx = stepID - self.stepIDOffset
+
+        return self._steps[idx] if idx >= 0 else None
 
     def getAllSteps(self):
         return self._steps

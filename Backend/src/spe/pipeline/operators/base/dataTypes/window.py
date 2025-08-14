@@ -1,8 +1,8 @@
-from typing import List
+from typing import List, Iterator
 
 from pympler import asizeof
 
-from spe.runtime.structures.tuple import Tuple
+from spe.common.tuple import Tuple
 
 
 class Window:
@@ -21,6 +21,10 @@ class Window:
 
     def getCount(self) -> int:
         return len(self._tuples)
+
+    def iterateData(self) -> Iterator:
+        for tup in self._tuples:
+            yield tup.data[0]
 
     def toDataArray(self) -> list:
         return [t.data[0] for t in self._tuples]

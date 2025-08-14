@@ -1,7 +1,7 @@
 import Comment from './comment';
 import { containsRect } from './utils';
-import {operatorLookup} from "@/components/Main";
 import {EVENTS, executeEvent} from "@/scripts/tools/EventHandler";
+import {PipelineService} from "@/scripts/services/pipelineState/PipelineService";
 
 export default class FrameComment extends Comment {
     constructor(text, editor) {
@@ -53,10 +53,8 @@ export default class FrameComment extends Comment {
     collapse(triggerNode) {
         if(triggerNode) {
             for(let link of this.links) {
-                if(operatorLookup.has(link)) {
-                    let node = operatorLookup.get(link);
-                    node.component.setDataMonitorState(node, false, false);
-                }
+                let node = PipelineService.getOperatorByID(link);
+                if(node != null) node.component.setDataMonitorState(node, false, false);
             }
         }
 
@@ -70,10 +68,8 @@ export default class FrameComment extends Comment {
     expand(triggerNode) {
         if(triggerNode) {
             for(let link of this.links) {
-                if(operatorLookup.has(link)) {
-                    let node = operatorLookup.get(link);
-                    node.component.setDataMonitorState(node, true, false);
-                }
+                let node = PipelineService.getOperatorByID(link);
+                if(node != null) node.component.setDataMonitorState(node, true, false);
             }
         }
 

@@ -1,113 +1,139 @@
+from __future__ import annotations
 import asyncio
-import json
+import os.path
+import pathlib
 import threading
-from typing import List, Optional, Callable
+from typing import TYPE_CHECKING, List, Optional, Callable
 
-from config import NETWORKING_SERVER_PORT, NETWORKING_SOCKET_PORT
-from network import server
-from spe.pipeline.pipelineUpdates import PipelineUpdate
-from spe.pipeline.pipelineParser import PipelineManager
-from spe.runtime.runtimeManager import RuntimeManager
-from utils.utils import BColors, isWindowsOS
+from config import Config, NETWORKING_SOCKET_PORT, NETWORKING_SERVER_PORT
+from utils.utils import BColors, isWindowsOS, parseBool
 
+if TYPE_CHECKING:
+    from spe.runtime.runtimeManager import RuntimeManager
+    from network.server import ServerManager
 
-_shutdownHooks: List[Callable] = []
+_instance: Optional[StreamVizzard] = None
 
 
 class StreamVizzard:
-    def __init__(self):
-        self.serverManager: Optional[server.ServerManager] = None
-        self.pipelineManager: Optional[PipelineManager] = None
+    def __init__(self, config: Config):
+        self.serverManager: Optional[ServerManager] = None
         self.runtimeManager: Optional[RuntimeManager] = None
 
-        self.systemStartedEvent = threading.Event()
+        self._running = False
 
-    def startUp(self):
+        self._systemShutdownEvent = threading.Event()
+        self._shutdownHooks: List[Callable] = []
+
+        self._config = config
+
+        global _instance
+        _instance = self
+
+    def start(self):
+        if self._running:
+            print("System already running!")
+
+            return
+
         print("  _____  _                             __      __ _                           _ \r\n / ____|| |                            \\ \\    / /(_)                         | |\r\n| (___  | |_  _ __  ___   __ _  _ __ ___\\ \\  / /  _  ____ ____ __ _  _ __  __| |\r\n \\___ \\ | __|| \'__|/ _ \\ / _` || \'_ ` _ \\\\ \\/ /  | ||_  /|_  // _` || \'__|/ _` |\r\n ____) || |_ | |  |  __/| (_| || | | | | |\\  /   | | / /  / /| (_| || |  | (_| |\r\n|_____/  \\__||_|   \\___| \\__,_||_| |_| |_| \\/    |_|/___|/___|\\__,_||_|   \\__,_|\r\n                                                                                ")
-        print("Starting system..")
+        print("Starting system...")
 
         if isWindowsOS():
+            # Patch asyncio sleep for windows
             from utils.asyncioUtils import windowsAsyncSleep
             asyncio.sleep = windowsAsyncSleep
 
-        self.serverManager = server.ServerManager()
-        self.pipelineManager = PipelineManager()
+        from spe.runtime.runtimeManager import RuntimeManager
+        from network.server import ServerManager
+
+        self.serverManager = ServerManager(self)
         self.runtimeManager = RuntimeManager(self.serverManager)
 
-        apiThread, socketThread = self.serverManager.start(NETWORKING_SERVER_PORT, NETWORKING_SOCKET_PORT, self)
+        if self._config.NETWORK_ENABLED:
+            self.serverManager.start(NETWORKING_SERVER_PORT, NETWORKING_SOCKET_PORT)
 
-        self.systemStartedEvent.set()
+        self._running = True
 
-        print("\n" + BColors.OKGREEN + "System started" + BColors.ENDC)
+        print(BColors.OKGREEN + "System started" + BColors.ENDC + "\n")
 
-        # Keep main thread running until manual shutdown
-        socketThread.join()
+    def keepRunning(self):
+        """ Blocks until the system is (manually) shutdown. """
 
-        self.systemStartedEvent.clear()
+        try:
+            # Allow the wait event to be interrupted
+            while not self._systemShutdownEvent.wait(1):
+                pass
+        except KeyboardInterrupt:
+            return
 
-        print("System shutdown")
-
-    def onPipelineStart(self, data: json):
-        pipeline = self.pipelineManager.createPipeline(data["pipeline"])
-
-        if pipeline is not None:
-            self.runtimeManager.startPipeline(pipeline)
-
-            self._applyStartMetaData(data["meta"])
-
-    def onPipelineUpdated(self, data: json):
-        updateID = data["updateID"]
-        updates: List[PipelineUpdate] = list()
-
-        for d in data["updates"]:
-            upData = PipelineUpdate.parse(d, updateID)
-
-            if upData is not None:
-                updates.append(upData)
-
-        self.runtimeManager.updatePipeline(updates)
-
-    def onHeatmapChanged(self, data: json):
-        self.runtimeManager.changeHeatmap(data["hmType"])
-
-    def onDebuggerStepChange(self, data: json):
-        self.runtimeManager.changeDebuggerStep(data["targetStep"], data["targetBranch"])
-
-    def onDebuggerRequestStep(self, data: json):
-        self.runtimeManager.requestDebuggerStep(data["targetBranch"], data["targetTime"])
-
-    def onDebuggerStateChanged(self, data: json):
-        self.runtimeManager.changeDebuggerState(data["historyActive"], data["historyRewind"])
-
-    def onDebuggerConfigChanged(self, data: json):
-        self.runtimeManager.changeDebuggerConfig(data["enabled"], data["debuggerMemoryLimit"], data["debuggerStorageLimit"],
-                                                 data["historyRewindSpeed"], data["historyRewindUseStepTime"])
-
-    def onAdvisorToggled(self, data: json):
-        self.runtimeManager.toggleAdvisor(data["enabled"])
-
-    def onPipelineStop(self, data: json):
-        self.runtimeManager.shutdown()
-
-    def _applyStartMetaData(self, metaData: json):
-        self.runtimeManager.toggleAdvisor(metaData["advisorEnabled"])
-        self.runtimeManager.changeHeatmap(metaData["heatmapType"])
-        self.runtimeManager.changeDebuggerConfig(metaData["debuggerEnabled"], metaData["debuggerMemoryLimit"], metaData["debuggerStorageLimit"],
-                                                 metaData["historyRewindSpeed"], metaData["historyRewindUseStepTime"])
-        self.runtimeManager.changeDebuggerState(False, None)
+    def stopPipeline(self):
+        self.runtimeManager.stopPipeline()
 
     def shutdown(self):
+        if not self._running:
+            return
+
+        print("Stopping system...")
+
         self.runtimeManager.shutdown()
 
         # Other hooks
-        for hook in _shutdownHooks:
+        for hook in self._shutdownHooks:
             hook()
 
         self.serverManager.shutdown()
+
+        self._systemShutdownEvent.set()
+        self._running = False
+
+        print(BColors.OKBLUE + "System stopped" + BColors.ENDC)
 
     def __del__(self):
         self.shutdown()
 
     @staticmethod
     def registerShutdownHook(hook: Callable):
-        _shutdownHooks.append(hook)
+        if _instance is None:
+            print("StreamVizzard system not running!")
+
+            return
+
+        _instance._shutdownHooks.append(hook)
+
+    @staticmethod
+    def getConfig() -> Optional[Config]:
+        if _instance is None:
+            print("StreamVizzard system not running!")
+
+            return None
+
+        return _instance._config
+
+    @staticmethod
+    def getRootPath():
+        return str(pathlib.Path(__file__).parent.parent.resolve())
+
+    @staticmethod
+    def getRootSrcPath():
+        return str(pathlib.Path(__file__).parent.resolve())
+
+    @staticmethod
+    def getOutPath():
+        rootPath = StreamVizzard.getRootPath()
+
+        return os.path.join(rootPath, "out")
+
+    @staticmethod
+    def requestOutFolder(*folders: str) -> str:
+        outFolder = StreamVizzard.getOutPath()
+
+        path = os.path.join(outFolder, *folders)
+
+        os.makedirs(path, exist_ok=True)
+
+        return path
+
+    @staticmethod
+    def isDockerExecution() -> bool:
+        return parseBool(os.environ.get("DOCKER", "false"))

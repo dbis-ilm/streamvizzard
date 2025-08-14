@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import importlib
 from typing import TYPE_CHECKING
 import logging
 import traceback
@@ -57,6 +59,11 @@ class MonitorDataType:
 
         return self._transformFunc(data)
 
+    def hasDisplayMode(self, dMode: int) -> bool:
+        prep = self._displayModes.get(dMode, None)
+
+        return prep is not None
+
     def prepareForDisplayMode(self, dMode: int, data, settings):
         prep = self._displayModes.get(dMode, None)
 
@@ -76,8 +83,11 @@ class MonitorDataType:
     # Static helpers
 
     @staticmethod
-    def isArrayOf(x, arrayType, allowNone: bool = False):
+    def isArrayOf(x, arrayType, allowNone: bool = False, allowEmpty: bool = False):
         if isinstance(x, list):
+            if len(x) == 0:
+                return allowEmpty
+
             for d in x:
                 if isinstance(d, arrayType):
                     return True
@@ -96,33 +106,42 @@ class MonitorDataType:
 class Module(ABC):
     def __init__(self, name: str):
         self.name = name
-        self.operators: Dict[str, Operator] = dict()
-        self.pathLookup: Dict[Type[Operator], str] = dict()
+        self.operators: Dict[str, tuple[str, str]] = dict()
+        self.pathLookup: Dict[str, str] = dict()
         self.monitorDataTypes: List[MonitorDataType] = list()
-        self.advisorStrategies: Dict[Union[Any, Type[Operator]], List[Type[AdvisorStrategy]]] = dict()
-        self._jsonEncoders: Dict[type, Callable] = dict()
+        self.advisorStrategies: Dict[Union[Any, str], List[Type[AdvisorStrategy]]] = dict()
 
     @abstractmethod
     def initialize(self):
         pass
 
-    def getOperator(self, name: str) -> Operator:
-        return self.operators.get(name, None)
+    def getOperator(self, name: str) -> Optional[Operator]:
+        path = self.operators.get(name, None)
+
+        if path is None:
+            return None
+
+        try:
+            module = importlib.import_module(path[0])
+            class_ = getattr(module, path[1])
+
+            return class_
+        except Exception:
+            logging.log(logging.ERROR, traceback.format_exc())
+
+            return None
 
     def getOperatorPath(self, operator: Type[Operator]):
-        return self.pathLookup.get(operator, None)
+        return self.pathLookup.get(operator.__module__ + "." + operator.__name__, None)
 
-    def registerOp(self, op, path):
-        self.operators[path] = op
-        self.pathLookup[op] = path
+    def registerOp(self, modulePath: str, opName: str, path: str):
+        self.operators[path] = (modulePath, opName)
+        self.pathLookup[modulePath + "." + opName] = path
 
     def registerMonitorDataType(self, dtype: MonitorDataType):
         self.monitorDataTypes.append(dtype)
 
-    def registerJSONEncoder(self, dtype: type, encoder: Callable):
-        self._jsonEncoders[dtype] = encoder
-
-    def registerAdvisorStrategy(self, operators: Union[List[Type[Operator]], Any], strategy: Type[AdvisorStrategy]):
+    def registerAdvisorStrategy(self, operators: Union[List[str], Any], strategy: Type[AdvisorStrategy]):
         if operators is not Any:  # Register for specific operators
             for operator in operators:
                 if operator in self.advisorStrategies:
@@ -142,11 +161,8 @@ class Module(ABC):
 
         return None
 
-    def getJSONEncoder(self, dtype: type):
-        return self._jsonEncoders.get(dtype, None)
-
     def getAdvisorStrategies(self, operator: Operator) -> Optional[List[Type[AdvisorStrategy]]]:
-        opRes = self.advisorStrategies.get(type(operator))
+        opRes = self.advisorStrategies.get(operator.__module__ + "." + operator.__class__.__name__)
         allRes = self.advisorStrategies.get(Any)
 
         if opRes is not None and allRes is not None:

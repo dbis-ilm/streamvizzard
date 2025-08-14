@@ -1,6 +1,6 @@
 <template>
   <div class="contextMenuItem search">
-    <input ref="input" class="mouseEventBlocker" v-model="value" placeholder="Search"/>
+    <input ref="input" v-model="value" placeholder="Search"/>
   </div>
 </template>
 
@@ -18,12 +18,6 @@ export default {
       this.$emit('search', this.value);
     }
   },
-
-  methods: {
-    onHide() {
-      this.$refs.input.blur(); //Require or otherwise mouseEventBlocker will not be reset
-    }
-  }
 }
 </script>
 
@@ -35,7 +29,7 @@ export default {
   text-align: center;
 }
 .search:hover {
-  background-color: #444;
+  background-color: var(--main-font-color);
 }
 
 </style>

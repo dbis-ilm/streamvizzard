@@ -1,9 +1,13 @@
 import json
-from typing import Optional
+from typing import Optional, List
 
 from spe.pipeline.operators.operator import Operator
-from spe.runtime.structures.tuple import Tuple
-from utils.utils import createUDFFunction
+from spe.runtime.compiler.definitions.compileDefinitions import CompileFramework, CompileComputeMode, CompileLanguage, \
+    CompileParallelism
+from spe.runtime.compiler.definitions.compileOpFunction import InferCustomCodeCOF
+from spe.runtime.compiler.definitions.compileOpSpecs import CompileOpSpecs
+from spe.common.tuple import Tuple
+from spe.common.udfCompiler import instantiateUserDefinedFunction
 
 
 class UDF(Operator):
@@ -11,12 +15,11 @@ class UDF(Operator):
         super(UDF, self).__init__(opID, 0, 0)
 
         self.rawCode = ""
-        self.code = ""
-        self.persistent = None
+        self._executable = None
 
     def setData(self, data: json):
         self.rawCode = data["code"]
-        self.code = createUDFFunction(self.rawCode, True)
+        self._executable = instantiateUserDefinedFunction(self, self.rawCode)
 
         socksIn = data["inputs"]
         socksOut = data["outputs"]
@@ -27,15 +30,28 @@ class UDF(Operator):
         return {"code": self.rawCode, "inputs": len(self.inputs), "outputs": len(self.outputs)}
 
     def _execute(self, tupleIn: Tuple) -> Optional[Tuple]:
-        # CARE: exec IS A HUGE SECURITY RISK!
+        if self._executable is None:  # Error during instantiation, don't override error msg
+            return None
 
-        loc = {"data": tupleIn.data, "tuple": tupleIn, "res": None, "persistent": self.persistent}
-        exec(self.code, globals(), loc)
+        try:
+            res = self._executable(tupleIn.data)
 
-        res = loc["res"]
-        self.persistent = loc["persistent"]
+            if res is None:
+                return self.createSinkTuple()
+            elif isinstance(res, tuple):
+                return self.createTuple(res)
+            else:
+                return self.createErrorTuple("Return value is not a tuple!")
+        except Exception:
+            return self.createErrorTuple()
 
-        if isinstance(res, tuple):
-            return self.createTuple(res)
+    # -------------------------- Compilation -------------------------
 
-        return None
+    def getCompileSpecs(self) -> List[CompileOpSpecs]:
+        return [CompileOpSpecs(CompileFramework.all(),
+                               [CompileLanguage.PYTHON],
+                               [CompileComputeMode.CPU],
+                               CompileParallelism.all(),
+                               compileFunction=InferCustomCodeCOF(InferCustomCodeCOF.Type.MAP,
+                                                                  lambda cfg: self.rawCode,
+                                                                  ("input", "$input")))]

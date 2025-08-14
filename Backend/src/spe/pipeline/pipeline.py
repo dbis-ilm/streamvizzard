@@ -1,10 +1,11 @@
 from __future__ import annotations
 import asyncio
-from typing import List, Dict, Optional, TYPE_CHECKING
+import uuid
+from typing import List, Dict, Optional, TYPE_CHECKING, Iterator, Set
 
 from spe.pipeline.connection import Connection
 
-from spe.runtime.structures.iEventEmitter import IEventEmitter
+from spe.common.iEventEmitter import IEventEmitter
 
 if TYPE_CHECKING:
     from spe.pipeline.operators.operator import Operator
@@ -15,8 +16,10 @@ class Pipeline(IEventEmitter):
     EVENT_PIPELINE_PRE_UPDATED = "PrePipeUpdated"  # [PipelineUpdate]
     EVENT_PIPELINE_UPDATED = "PipeUpdated"  # [PipelineUpdate]
 
-    def __init__(self):
+    def __init__(self, pipelineID: Optional[str] = None):
         super(Pipeline, self).__init__()
+
+        self.uuid = str(uuid.uuid4().hex) if (pipelineID is None or len(pipelineID) == 0) else pipelineID
 
         self._eventLoop: Optional[asyncio.AbstractEventLoop] = None
 
@@ -63,6 +66,17 @@ class Pipeline(IEventEmitter):
     def getEventLoop(self) -> asyncio.AbstractEventLoop:
         return self._eventLoop
 
+    def getSinks(self) -> List[Operator]:
+        """ Collects all operators that do not have any output operators connected. """
+
+        sinks = []
+
+        for op in self.getAllOperators():
+            if len(op.getNeighbours(False, True)) == 0:
+                sinks.append(op)
+
+        return sinks
+
     def removeOperator(self, opID: int):
         op = self.getOperator(opID)
 
@@ -99,26 +113,115 @@ class Pipeline(IEventEmitter):
         con.input.removeConnection(con)
         con.output.removeConnection(con)
 
-    def validate(self) -> (bool, str):
+    def validate(self) -> Optional[str]:
         if len(self.sources) == 0:
-            return False, "No sources!"
+            return "Pipeline has no sources!"
 
-        return True, ""
+        # Verify that all parent/children constraints are fulfilled
 
-    def createRuntime(self, eventLoop: asyncio.AbstractEventLoop):
+        for op in self.getAllOperators():
+            if op.allowedParents is not None:
+                for parent in op.getNeighbours(True, False):
+
+                    isAllowed = False
+
+                    for allowed in op.allowedParents:
+                        if isinstance(parent, allowed):
+                            isAllowed = True
+
+                            break
+
+                    if not isAllowed:
+                        return f"Operator {parent.getUniqueName()} not allowed as parent for {op.getUniqueName()}!"
+
+            if op.allowedChildren is not None:
+                for child in op.getNeighbours(False, True):
+
+                    isAllowed = False
+
+                    for allowed in op.allowedChildren:
+                        if isinstance(child, allowed):
+                            isAllowed = True
+
+                            break
+
+                    if not isAllowed:
+                        return f"Operator {child.getUniqueName()} not allowed as child for {op.getUniqueName()}!"
+
+        return None
+
+    def createRuntime(self, eventLoop: asyncio.AbstractEventLoop) -> bool:
         self._eventLoop = eventLoop
 
+        hasError = False
+
         for operator in self.getAllOperators():
-            operator.onRuntimeCreate(eventLoop)
+            try:
+                operator.onRuntimeCreate(eventLoop)
+            except Exception:
+                operator.onExecutionError()
+
+                hasError = True
+
+        return not hasError
 
     def shutdown(self):
         for operator in self.getAllOperators():
-            operator.onRuntimeDestroy()
+            try:
+                operator.onRuntimeDestroy()
+            except Exception:
+                operator.onExecutionError()
+
+    def iterateTopological(self) -> Iterator[Operator]:
+        """ Returns an iterator that visits all operators in an order that
+        every input of an operator is visited before the actual operator. """
+
+        handledOps: Set[int] = set()
+
+        def ensureInput(op: Operator) -> Iterator[Operator]:
+            if op.id in handledOps:
+                return
+
+            handledOps.add(op.id)
+
+            inputs = op.getNeighbours(True, False)
+
+            for inp in inputs:
+                yield from ensureInput(inp)
+
+            yield op
+
+        for operator in self.getAllOperators():
+            yield from ensureInput(operator)
+
+    def iterateReversedTopological(self) -> Iterator[Operator]:
+        """ Returns an iterator that visits all operators in an order that
+        every output of an operator is visited before the actual operator. """
+
+        handledOps: Set[int] = set()
+
+        def ensureOutput(op: Operator) -> Iterator[Operator]:
+            if op.id in handledOps:
+                return
+
+            handledOps.add(op.id)
+
+            outputs = op.getNeighbours(False, True)
+
+            for oup in outputs:
+                yield from ensureOutput(oup)
+
+            yield op
+
+        for operator in self.getAllOperators():
+            yield from ensureOutput(operator)
 
     def describe(self):
-        print("--- PIPELINE ---")
+        print(f"--- PIPELINE {self.uuid} ---")
 
-        for op in self._operators:
+        orderedOps = sorted(self._operators, key=lambda x: x.id)
+
+        for op in orderedOps:
             inString = ""
             outString = ""
 
@@ -129,7 +232,7 @@ class Pipeline(IEventEmitter):
 
                     inString += "    Socket[" + str(c.output.id) + "] at " \
                                 + "Op[ID: " + str(c.output.op.id) \
-                                + ", " + str(c.output.op.__class__.__name__) \
+                                + ", " + c.output.op.getName() \
                                 + "] --> Socket[" + str(i.id) + "], ConID: " + str(c.id)
 
             for i in op.outputs:
@@ -140,7 +243,7 @@ class Pipeline(IEventEmitter):
                     outString += "    " + "Socket[" + str(i.id) \
                                  + "] --> " + "Socket[" + str(c.input.id) + "] at " \
                                  + "Op[ID: " + str(c.input.op.id) \
-                                 + ", " + str(c.input.op.__class__.__name__) + "], ConID: " + str(c.id)
+                                 + ", " + c.input.op.getName() + "], ConID: " + str(c.id)
 
             if len(inString) > 0:
                 inString = "\n" + inString
@@ -148,7 +251,7 @@ class Pipeline(IEventEmitter):
             if len(outString) > 0:
                 outString = "\n" + outString
 
-            print("Op[ID: " + str(op.id) + ", " + str(op.__class__.__name__) + "]" + inString + outString)
+            print("Op[ID: " + str(op.id) + ", " + op.getName() + "]" + inString + outString)
 
         # -----
 
@@ -156,10 +259,12 @@ class Pipeline(IEventEmitter):
 
         sources = ""
 
-        for source in self.sources:
+        orederedSources = sorted(self.sources, key=lambda x: x.id)
+
+        for source in orederedSources:
             if len(sources) > 0:
                 sources += ", "
-            sources += str(source.__class__.__name__)
+            sources += source.getName()
 
         print(sources)
 

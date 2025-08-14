@@ -2,8 +2,8 @@ import json
 from typing import Optional
 
 from spe.pipeline.operators.operator import Operator
-from spe.runtime.structures.tuple import Tuple
-from utils.utils import instantiateUserDefinedClass
+from spe.common.tuple import Tuple
+from spe.common.udfCompiler import instantiateUserDefinedClass
 
 
 class UDO(Operator):
@@ -32,12 +32,16 @@ class UDO(Operator):
             try:
                 res = self._instance.execute(tupleIn)
 
-                if res is not None:
+                if res is None:
+                    return self.createSinkTuple()
+                elif isinstance(res, tuple):
                     return self.createTuple(res)
+                else:
+                    return self.createErrorTuple("Return value is not a tuple!")
             except Exception:
-                self.onExecutionError()
+                return self.createErrorTuple()
 
-        return None
+        return None  # Error during instantiation, don't override error msg
 
     def onRuntimeDestroy(self):
         super(UDO, self).onRuntimeDestroy()

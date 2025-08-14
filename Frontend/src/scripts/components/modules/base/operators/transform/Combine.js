@@ -10,32 +10,23 @@ export default class _Combine extends Component {
 
     builder(node) {
         node.ins = new NumControl(node, "ins", false, 1,"Inputs", "", 0);
-        node.outCount = new NumControl(node, "outCount", false, 1, "Outputs", "", 0);
 
         return this.onBuilderInitialized(node,
             new Display(node),
             [{name: anySocket.name, socket: anySocket}],
             [{name: anySocket.name, socket: anySocket}],
-            [node.ins, node.outCount]);
+            [node.ins]);
     }
 
     onControlValueChanged(ctrl, node, oldVal) {
         super.onControlValueChanged(ctrl, node, oldVal);
 
-        this.updateSockets(node, node.ins.getValue(), node.outCount.getValue(), anySocket, anySocket).then();
-    }
-
-    getData(node) {
-        return {
-            ins: node.ins.getValue(),
-            outs: node.outCount.getValue()
-        };
+        this.updateSockets(node, node.ins.getValue(), 1, anySocket, anySocket).then();
     }
 
     async setData(node, data) {
-        node.ins.setValue(data.ins);
-        node.outCount.setValue(data.outs);
+        await super.setData(node, data);
 
-        await this.updateSockets(node, node.ins.getValue(), node.outCount.getValue(), anySocket, anySocket).then();
+        await this.updateSockets(node, node.ins.getValue(), 1, anySocket, anySocket).then();
     }
 }

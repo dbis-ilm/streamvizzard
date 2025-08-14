@@ -12,9 +12,14 @@
                              :class="$refs.undoRedoManager && $refs.undoRedoManager.hasRedo() ? '' : 'disabled'" :sync="true" />
               <hsc-menu-separator/>
               <hsc-menu-item label="Visibility">
-                <hsc-menu-item label="Expand All" @click="toggleAllDataMonitors(true)" :sync="true" />
-                <hsc-menu-item label="Collapse All" @click="toggleAllDataMonitors(false)" :sync="true" />
+                <hsc-menu-item label="Auto Arrange" @click="autoArrange()" :sync="true" />
+                <hsc-menu-item label="Expand All" @click="toggleAllOperators(true)" :sync="true" />
+                <hsc-menu-item label="Collapse All" @click="toggleAllOperators(false)" :sync="true" />
                 <hsc-menu-item label="Focus All" @click="focusAll()" :sync="true" />
+              </hsc-menu-item>
+              <hsc-menu-separator/>
+              <hsc-menu-item label="Compile" @click="compilePipeline()" :sync="true" :class="pipelineStopped ? '' : 'disabled'"/>
+              <hsc-menu-item label="Simulate" @click="simulatePipeline()" :sync="true" :class="pipelineStopped ? '' : 'disabled'">
               </hsc-menu-item>
               <hsc-menu-separator/>
               <hsc-menu-item label="Save" @click="savePipeline()" :sync="true" />
@@ -23,10 +28,32 @@
             </hsc-menu-bar-item>
 
             <hsc-menu-bar-item label="Settings">
-              <hsc-menu-item label="Restore Pipeline" :sync="true" v-model="restorePipeline"
-                             @click="onSettingToggle('restorePipeline', !restorePipeline)"
-                             title="Restores last pipeline when page is loaded"/>
+              <hsc-menu-item label="General">
+                <hsc-menu-item label="Restore Pipeline" :sync="true" v-model="restorePipeline"
+                               @click="onSettingToggle('restorePipeline', !restorePipeline)"
+                               title="Restores last pipeline when page is loaded"/>
+              </hsc-menu-item>
               <hsc-menu-separator/>
+
+              <hsc-menu-item label="Monitor">
+                <hsc-menu-item title="If the pipeline monitor should be enabled to visualize processed data and statistics"
+                               label="Enabled" v-model="monitorEnabled" @click="onSettingToggle('monitor', !monitorEnabled)" :sync="true" />
+                <hsc-menu-item label="Heatmap">
+                  <hsc-menu-item label="Disabled" :sync="true" type="checkbox" :checked="$refs.heatmap ? $refs.heatmap.hmType === 0 : false" @click="onHeatmapChange(0)"/>
+                  <hsc-menu-item label="Data Size" :sync="true" type="checkbox" :checked="$refs.heatmap ? $refs.heatmap.hmType === 2 : false" @click="onHeatmapChange(2)"/>
+                  <hsc-menu-item label="Execution Time" :sync="true" type="checkbox" :checked="$refs.heatmap ? $refs.heatmap.hmType === 3 : false" @click="onHeatmapChange(3)"/>
+                </hsc-menu-item>
+                <hsc-menu-item title="If detailed statistics for the operator execution should be tracked and stored. For most reliable execution results, the pipeline should be executed with the highest possible source data rates. Moreover, a longer pipeline execution duration reduces the impact of execution fluctuations."
+                               label="Track Stats" v-model="monitorTrackStats" @click="onSettingToggle('monitorTrackStats', !monitorTrackStats)" :sync="true" />
+              </hsc-menu-item>
+              <hsc-menu-separator/>
+
+              <hsc-menu-item label="Advisor">
+                <hsc-menu-item title="If the pipeline advisor should be enabled to suggest suitable operators"
+                               label="Enabled" v-model="advisorEnabled" @click="onSettingToggle('advisor', !advisorEnabled)" :sync="true" />
+              </hsc-menu-item>
+              <hsc-menu-separator/>
+
               <hsc-menu-item label="Debugger">
                 <hsc-menu-item label="Enabled" v-model="debuggerEnabled" @click="onSettingToggle('debugger', !debuggerEnabled)" :sync="true" />
                 <hsc-menu-item label="History">
@@ -47,7 +74,7 @@
                                title="If information about the executed steps should be displayed while manually traversing the history"/>
                 <hsc-menu-item label="History Preview" v-model="debuggerAllowHistoryPreview" @click="onSettingToggle('debuggerHistPrev', !debuggerAllowHistoryPreview)" :sync="true"
                                title="If the pipeline updates in the recorded history graph can be previewed by hovering"/>
-                <hsc-menu-item label="Rewind" style="display: none;">
+                <hsc-menu-item label="Rewind">
                   <hsc-menu-item>
                     <div slot="body" style="display:flex; align-items: center;" @mouseup="$refs.historyRewindSpeedSlider.resetMouseUp()">
                       <div style="margin-right: 12px;">Speed:</div>
@@ -57,33 +84,36 @@
                   <hsc-menu-item label="Use Real Step Time" style="text-align: left;" v-model="debuggerRewindUseStepTime" @click="onSettingToggle('debuggerRewindUseStepTime', !debuggerRewindUseStepTime)"
                                  title="True if the real time of the steps should be used to calculate the playback speed" :sync="true" />
                 </hsc-menu-item>
+                <hsc-menu-item label="Provenance">
+                  <hsc-menu-item label="Enabled" style="text-align: left;" v-model="debuggerProvenanceEnabled" @click="onSettingToggle('debuggerProvenanceEnabled', !debuggerProvenanceEnabled)"
+                                 title="True if provenance information should be tracked during debugging for querying." :sync="true" />
+                  <hsc-menu-item label="Await Updates" style="text-align: left;" v-model="debuggerProvAwaitUpdates" @click="onSettingToggle('debuggerProvAwaitUpdates', !debuggerProvAwaitUpdates)"
+                                 title="If updating of the provenance graph should be awaited before provenance queries are executed." :sync="true" />
+                </hsc-menu-item>
               </hsc-menu-item>
-            </hsc-menu-bar-item>
-
-            <hsc-menu-bar-item label="Heatmap">
-              <hsc-menu-item label="None" :sync="true" type="radio" v-model="hmValue" :value="0" @click="onHeatmapChange(0)"/>
-              <hsc-menu-item label="Data Size" :sync="true" type="radio" v-model="hmValue" :value="2" @click="onHeatmapChange(2)"/>
-              <hsc-menu-item label="Op Runtime" :sync="true" type="radio" v-model="hmValue" :value="3" @click="onHeatmapChange(3)"/>
             </hsc-menu-bar-item>
           </hsc-menu-bar>
         </hsc-menu-style-black>
       </div>
-      <div id="startButton" @click="onStartButtonClicked()"><div class="title">Start Pipeline</div><div class="loader">Start Pipeline</div></div>
-      <div><PipelineDebugger v-if="debuggerEnabled" ref="debugger" @stateChange="onDebuggerStateChange" @stepChange="onDebuggerTraversal" @requestStep="onDebuggerRequestStep"></PipelineDebugger></div>
-      <div style="position: absolute; right: 12px; color:#dedede; font-size: 24px; font-weight: bold; top:6px; pointer-events: none;">StreamVizzard</div>
+      <div id="startButton" @click="onStartButtonClicked()"><div class="title">Start Pipeline</div><div class="loader">Start Pipeline</div>
+        <i class="bi bi-info-circle pipelineError" :title="pipelineError" v-if="pipelineError != null"></i>
+      </div>
+      <div><PipelineDebugger v-if="debuggerEnabled" ref="debugger" @stateChange="onDebuggerStateChange" @stepChange="onDebuggerTraversal" @requestStep="onDebuggerRequestStep" @provQueryExecute="onDebuggerProvQueryExecute"></PipelineDebugger></div>
+      <div id="svHeading">StreamVizzard<span id="svVersion">v{{svVersion}}</span></div>
     </div>
     <div id="content">
       <div id="editor">
         <div id="rete" ref="rete"></div>
-        <HeatmapTemplate ref="heatmap" style="position:absolute; top:10px; left: 10px;"></HeatmapTemplate>
+        <HeatmapTemplate ref="heatmap" style="position:absolute; top:10px; left: 20px;"></HeatmapTemplate>
       </div>
       <Sidebar ref="sidebar"></Sidebar>
+      <OperatorPresetBar ref="opPresetBar"></OperatorPresetBar>
+      <CompilePipelineWindow ref="compilePipelineWindow"></CompilePipelineWindow>
     </div>
     <div class="modals">
-      <CompilePipelineModal ref="compilePipeModal"></CompilePipelineModal>
       <PipelineSimulationModal ref="simulatePipeModal"></PipelineSimulationModal>
-      <SavePipelineModal ref="savePipeModal"></SavePipelineModal>
-      <LoadPipelineModal ref="loadPipeModal"></LoadPipelineModal>
+      <StoragePipelineModal ref="loadPipeModal"></StoragePipelineModal>
+      <OperatorPresetStoreModal ref="opPresetStoreModal"></OperatorPresetStoreModal>
     </div>
   </div>
 </template>
@@ -96,33 +126,28 @@ import AreaPlugin from "rete-area-plugin";
 
 import ConnectionMasteryPlugin from "rete-connection-mastery-plugin";
 
-import C from "@/scripts/components/modules"
-import {ServerConnector} from "@/scripts/ServerConnector";
+import {NetworkService} from "@/scripts/services/network/NetworkService";
 
 import CommentPlugin from "@/plugins/rete-comment-plugin";
 import ContextMenuPlugin from "@/plugins/context-menu-plugin";
 
 import $ from 'jquery'
 
-import UserEditorHistory from "@/components/templates/tools/editorHistory/UserEditorHistory";
-import NodeTemplate from "@/components/templates/NodeTemplate";
-import HeatmapTemplate from "@/components/templates/heatmap/HeatmapTemplate";
-import SavePipelineModal from "@/components/templates/tools/SavePipelineModal";
+import UserEditorHistory from "@/components/utils/editorHistory/UserEditorHistory";
+import NodeTemplate from "@/components/pipeline/NodeTemplate.vue";
+import HeatmapTemplate from "@/components/features/monitor/heatmap/HeatmapTemplate";
 import {initializeConnectionMonitor} from "@/scripts/components/monitor/ConnectionMonitor";
 import {EVENTS, executeEvent, registerEvent} from "@/scripts/tools/EventHandler";
-import LoadPipelineModal from "@/components/templates/tools/LoadPipelineModal";
 import {createNode} from "rete-context-menu-plugin/src/utils";
-import {createSaveData, getOperatorSaveData, loadOperatorFromSaveData, loadSaveData,} from "@/scripts/tools/Utils";
-import Sidebar from "@/components/templates/sidebar/Sidebar";
-import CompilePipelineModal from "@/components/templates/tools/CompilePipelineModal";
-import {initializePipelineExporter} from "@/scripts/tools/PipelineExporter";
-import PipelineDebugger from "@/components/templates/debugger/PipelineDebugger";
-import {getPipelineStatus, PIPELINE_STATUS, setPipelineStatus} from "@/scripts/tools/PipelineStatus";
-import HistoryMemorySlider from "@/components/templates/debugger/HistoryMemorySlider";
-import HistoryRewindSpeedSlider from "@/components/templates/debugger/HistoryRewindSpeedSlider";
-import PipelineSimulationModal from "@/components/templates/tools/simulation/PipelineSimulationModal";
+import {
+  safeVal, createConnection, valueOr,
+} from "@/scripts/tools/Utils";
+import Sidebar from "@/components/interface/sidebar/Sidebar";
+import PipelineDebugger from "@/components/features/debugger/PipelineDebugger";
+import HistoryMemorySlider from "@/components/features/debugger/HistoryMemorySlider";
+import HistoryRewindSpeedSlider from "@/components/features/debugger/HistoryRewindSpeedSlider";
+import PipelineSimulationModal from "@/components/features/simulator/PipelineSimulationModal";
 import {initializeSystem, system} from "@/main";
-import {TestUtils} from "@/scripts/tools/TestUtils";
 import {
   ConnectionAddedPU,
   ConnectionRemovedPU,
@@ -130,23 +155,43 @@ import {
   OperatorRemovedPU,
   OperatorDataUpdatedPU,
   OperatorMetaDataUpdatedPU, GenericUpdatePU
-} from "@/scripts/tools/PipelineUpdates";
-import {synchronizeExecution} from "@/scripts/tools/debugger/DebuggingUtils";
+} from "@/scripts/services/pipelineUpdates/PipelineUpdates";
+import StoragePipelineModal from "@/components/interface/modals/StoragePipelineModal.vue";
+import OperatorPresetBar from "@/components/interface/opPresetBar/OperatorPresetBar.vue";
+import OperatorPresetStoreModal from "@/components/interface/opPresetBar/OperatorPresetStoreModal.vue";
+import CompilePipelineWindow from "@/components/features/compiler/CompilePipelineWindow.vue";
+import {Services} from "@/scripts/services/Services";
+import {EditorInputManager} from "@/scripts/services/EditorInputManager";
+import {DataExportService} from "@/scripts/services/dataExport/DataExportService";
+import {PipelineUpdateService} from "@/scripts/services/pipelineUpdates/PipelineUpdateService";
+import {PipelineService, PIPELINE_STATUS} from "@/scripts/services/pipelineState/PipelineService";
+import {TestUtils} from "@/scripts/tools/TestUtils";
+import {AutoLayoutPipeline} from "@/scripts/tools/AutoLayoutPipeline";
+import {getComponents} from "@/scripts/components/modules";
+import {SV_VERSION} from "@/scripts/streamVizzard";
 
 export default {
   name: "Main",
 
-  components: {PipelineDebugger, CompilePipelineModal, Sidebar,
-    HeatmapTemplate, SavePipelineModal, LoadPipelineModal, HistoryMemorySlider,
-    HistoryRewindSpeedSlider, UserEditorHistory, PipelineSimulationModal},
+  components: {
+    CompilePipelineWindow,
+    OperatorPresetStoreModal,
+    OperatorPresetBar, PipelineDebugger, Sidebar,
+    HeatmapTemplate, StoragePipelineModal, HistoryMemorySlider,
+    HistoryRewindSpeedSlider, UserEditorHistory, PipelineSimulationModal
+  },
 
   methods: {
     async init() {
-      const container = document.querySelector('#rete');
-      const components = C.getComponents()
+      let ths = this;
 
-      const editor = new Rete.NodeEditor('demo@0.1.0', container);
+      const container = document.querySelector('#rete');
+      const components = getComponents();
+
+      const editor = new Rete.NodeEditor(DataExportService.getEditorVersionID(), container);
       this.editor = editor;
+
+      editor.bind("editorZoom");
 
       editor.bind("nodeMonitorStateChanged"); //Component -> Node, State
       editor.bind("nodeResized");
@@ -163,10 +208,14 @@ export default {
       editor.use(VueRenderPlugin, {
         component: NodeTemplate
       });
+
+      let opPresetStoreModal = this.$refs.opPresetStoreModal;
+      let opPresetBat = this.$refs.opPresetBar;
+
       editor.use(ContextMenuPlugin, {
         delay: 50,
         allocate(component) {
-          if(component.contextPath !== undefined) return component.contextPath;
+          if (component.contextPath !== undefined) return component.contextPath;
           else return ['default'];
         },
         rename(component) {
@@ -183,13 +232,73 @@ export default {
 
               editor.addNode(node);
 
-              await loadOperatorFromSaveData(node, getOperatorSaveData(args.node));
+              await DataExportService.loadOperatorFromSaveData(node, DataExportService.getOperatorSaveData(args.node));
+
+              editor.trigger("selectnode", editor.view.nodes.get(node));
+            },
+            async 'Replace'(args) {
+              let node = args.node;
+
+              // Update internal mouse pos to position of current node to force new node to be placed at same position
+              editor.view.area.mouse = {"x": node.position[0], "y": node.position[1]};
+
+              let replaceNode = function(newNode) {
+                // Update internal operator ID (a new opID is assigned)
+
+                newNode.uuid = node.uuid;
+                newNode.viewName = node.viewName;
+
+                // Exchange OUT connections
+
+                for(let [k, ] of node.outputs.entries()) {
+                  let output = node.outputs.get(k);
+                  let newOutput = newNode.outputs.get(k);
+
+                  if(output == null || newOutput == null) continue;
+
+                  for(let c of output.connections) {
+                    const otherOp = c.input.node.component;
+                    const otherSocket = otherOp.getSocketByKey(c.input.node, c.input.key);
+
+                    editor.removeConnection(c);
+                    createConnection(editor, newOutput, otherSocket);
+                  }
+                }
+
+                // Exchange IN connections
+
+                for(let [k, ] of node.inputs.entries()) {
+                  let input = node.inputs.get(k);
+                  let newInput = newNode.inputs.get(k);
+
+                  if(input == null || newInput == null) continue;
+
+                  for(let c of input.connections) {
+                    const otherOp = c.input.node.component;
+                    const otherSocket = otherOp.getSocketByKey(c.output.node, c.output.key);
+
+                    editor.removeConnection(c);
+                    createConnection(editor, otherSocket, newInput);
+                  }
+                }
+
+                // Remove old node
+
+                node.component.editor.removeNode(node);
+
+                executeEvent(EVENTS.NODE_REPLACED, [newNode, node]);
+              };
+
+              editor.trigger("contextmenu", ({e: args.e, nodeCreatedCallback: replaceNode}));
             },
             'Group'() {
               let nodeList = [];
               nodeList.push(node);
 
               editor.trigger('addcomment', ({type: 'frame', nodes: nodeList, text: "Group"}))
+            },
+            'Store Preset'(args) {
+              opPresetStoreModal.openStoreModal(args.node, opPresetBat.getPresetList(), opPresetBat.updateOperatorPresets);
             }
           }
         },
@@ -205,85 +314,121 @@ export default {
       this.$refs.undoRedoManager.initialize(editor);
 
       initializeConnectionMonitor(editor);
-      initializePipelineExporter();
 
-      registerDataExporter("advisorEnabled", () => {return this.advisorEnabled;}, (checked) => { this.advisorEnabled = checked; });
-      registerDataExporter("debugger",
-          () => {return {"enabled": this.debuggerEnabled, "memLimit": this.$refs.historyMemSlider.getMemoryLimit(),
-            "storageLimit": this.$refs.historyStorageSlider.getMemoryLimit(),
-            "showStepInfo": this.debuggerStepNotifications, "allowHistPrev": this.debuggerAllowHistoryPreview,
-            "rewindSpeed": this.$refs.historyRewindSpeedSlider.getValue(),
-            "rewindUseStepTime": this.debuggerRewindUseStepTime};},
-          (data) => { this.debuggerEnabled = data["enabled"]; this.debuggerAllowHistoryPreview = data["allowHistPrev"];
-            this.$refs.historyMemSlider.setMemoryLimit(data["memLimit"]);
-            this.$refs.historyStorageSlider.setMemoryLimit(data["storageLimit"]);
-            this.debuggerStepNotifications = data["showStepInfo"]; this.$refs.historyRewindSpeedSlider.setValue(data["rewindSpeed"]);
-            this.debuggerRewindUseStepTime = data["rewindUseStepTime"]});
+      Services.initialize();
+
+      DataExportService.registerDataExporter("interface", () => {
+        return {"sidebarOpened": this.$refs.sidebar.opened}
+      }, (data) => {
+        this.$refs.sidebar.opened = data["opened"]
+      })
+      DataExportService.registerDataExporter("advisor", () => {
+        return {"enabled": this.advisorEnabled};
+      }, (data) => {
+        this.advisorEnabled =  safeVal(data["enabled"], this.advisorEnabled);
+      });
+      DataExportService.registerDataExporter("monitor", () => {
+            return {
+              "enabled": this.monitorEnabled,
+              "trackStats": this.monitorTrackStats
+            }
+          },
+          (data) => {
+            this.monitorEnabled = safeVal(data["enabled"], this.monitorEnabled);
+            this.monitorTrackStats = safeVal(data["trackStats"], this.monitorTrackStats);
+          });
+      DataExportService.registerDataExporter("debugger",
+          () => {
+            return {
+              "enabled": this.debuggerEnabled,
+              "memLimit": this.$refs.historyMemSlider.getMemoryLimit(),
+              "storageLimit": this.$refs.historyStorageSlider.getMemoryLimit(),
+              "showStepInfo": this.debuggerStepNotifications,
+              "allowHistPrev": this.debuggerAllowHistoryPreview,
+              "rewindSpeed": this.$refs.historyRewindSpeedSlider.getValue(),
+              "rewindUseStepTime": this.debuggerRewindUseStepTime,
+              "debuggerProvenanceEnabled": this.debuggerProvenanceEnabled,
+              "debuggerProvAwaitUpdates": this.debuggerProvAwaitUpdates
+            };
+          },
+          (data) => {
+            this.debuggerEnabled = safeVal(data["enabled"], this.debuggerEnabled);
+            this.debuggerAllowHistoryPreview = safeVal(data["allowHistPrev"], this.debuggerAllowHistoryPreview);
+            this.$refs.historyMemSlider.setMemoryLimit(safeVal(data["memLimit"], this.$refs.historyMemSlider.getMemoryLimit()));
+            this.$refs.historyStorageSlider.setMemoryLimit(safeVal(data["storageLimit"], this.$refs.historyStorageSlider.getMemoryLimit()));
+            this.debuggerStepNotifications = safeVal(data["showStepInfo"], this.debuggerStepNotifications);
+            this.$refs.historyRewindSpeedSlider.setValue(safeVal(data["rewindSpeed"], this.$refs.historyRewindSpeedSlider.getValue()));
+            this.debuggerRewindUseStepTime = safeVal(data["rewindUseStepTime"], this.debuggerRewindUseStepTime);
+            this.debuggerProvenanceEnabled = safeVal(data["debuggerProvenanceEnabled"], this.debuggerProvenanceEnabled);
+            this.debuggerProvAwaitUpdates = safeVal(data["debuggerProvAwaitUpdates"], this.debuggerProvAwaitUpdates);
+          });
 
       registerEvent(EVENTS.PIPELINE_STATUS_CHANGED, this.updatePipelineStartButton);
       this.updatePipelineStartButton();
 
+      // Override modal show function
+      let showOverride = this.$modal.show;
+      this.$modal.show = function (modalName, params) {
+        executeEvent(EVENTS.MODAL_OPENED, modalName);
+        showOverride(modalName, params);
+      }
+
       //---------------- Operator Lifecycle ----------------
 
-      editor.onComponentCreated = function (node, component){
+      editor.onComponentCreated = function (node, component) {
         node.component = component;
-        node.dataMonitorEnabled = true; //Component data shared between all instances -> put data in node
-        node.statsMonitorEnabled = false;
+        node.dataMonitorEnabled = true;
+        node.settingsEnabled = true;
       }
 
       editor.on('nodecreated', node => {
-        operatorLookup.set(node.id, node);
+        PipelineService.registerOperator(node.id, node);
 
-        if(canRegisterPipelineUpdate()) registerPipelineUpdate(new OperatorAddedPU(node.id, node.component.getPipelineData(node)));
+        ths.onPipelineUpdated(new OperatorAddedPU(node.id, node.component.getPipelineData(node)));
 
         executeEvent(EVENTS.NODE_CREATE, node);
       });
 
       //Clear operatorLookup when node is removed
       editor.on('noderemoved', node => {
-        operatorLookup.delete(node.id);
+        PipelineService.deleteOperator(node.id);
 
-        if(editor.selected.contains(node)) {
+        if (editor.selected.contains(node)) {
           editor.selected.clear();
           editor.trigger("nodeSelectionCleared");
         }
 
-        if(canRegisterPipelineUpdate()) registerPipelineUpdate(new OperatorRemovedPU(node.id));
+        ths.onPipelineUpdated(new OperatorRemovedPU(node.id));
 
         executeEvent(EVENTS.NODE_REMOVED, node);
       });
 
       editor.on('connectioncreated', con => {
-        if(!("id" in con)) {
-          con.id = uniqueConnectionIDCounter;
-          uniqueConnectionIDCounter++;
-        }
+        PipelineService.registerConnection(con);
 
-        connectionLookup.set(con.id, con);
-
-        if(canRegisterPipelineUpdate()) registerPipelineUpdate(new ConnectionAddedPU(con));
+        ths.onPipelineUpdated(new ConnectionAddedPU(con));
 
         executeEvent(EVENTS.CONNECTION_CREATED, con);
       });
 
       editor.on('connectionremoved', con => {
-        connectionLookup.delete(con.id);
+        PipelineService.deleteConnection(con.id);
 
-        if(canRegisterPipelineUpdate()) registerPipelineUpdate(new ConnectionRemovedPU(con.id));
+        ths.onPipelineUpdated(new ConnectionRemovedPU(con.id));
 
         executeEvent(EVENTS.CONNECTION_REMOVED, con);
       });
 
       registerEvent(EVENTS.DEBUG_UI_EVENT_REGISTERED, () => {
-        if(canRegisterPipelineUpdate()) registerPipelineUpdate(new GenericUpdatePU());
+        ths.onPipelineUpdated(new GenericUpdatePU());
       })
 
-      editor.onOperatorDataUpdated = function(node, ctrl) {
-        if(canRegisterPipelineUpdate()) registerPipelineUpdate(new OperatorDataUpdatedPU(node.id, node.component.getData(node), ctrl.key));
+      editor.onOperatorDataUpdated = function (node, ctrl) {
+        ths.onPipelineUpdated(new OperatorDataUpdatedPU(node.id, node.uuid, node.component.getData(node), ctrl.key));
       }
 
-      editor.onOperatorMetaUpdated = function(node) {
-        if(canRegisterPipelineUpdate()) registerPipelineUpdate(new OperatorMetaDataUpdatedPU(node.id, node.component.getMetaData(node)));
+      editor.onOperatorMetaUpdated = function (node) {
+        ths.onPipelineUpdated(new OperatorMetaDataUpdatedPU(node.id, node.component.getMetaData(node)));
       }
 
       //-----------------------------------------------------
@@ -291,17 +436,21 @@ export default {
       //----------------------- Scene -----------------------
 
       editor.on('translate zoom nodetranslate', (e) => {
-        if(e.source === "dblclick") return false; //No double click zoom
+        if (e.source === "dblclick") return false; //No double click zoom
 
-        //Block events if the node itself has the class
-        if(e.node !== undefined && e.node.vueContext.$el.classList.contains("mouseEventBlocker")) return false;
+        // Resize adds a flag to the node
+        if (e.node !== undefined && e.node.isResized === true) return false;
 
-        return !hasMouseEventBlocker(); //Prevented "false" if blocker is registered
+        if (EditorInputManager.hasSelectedInput()) return false;
+
+        if (e.zoom !== undefined) editor.trigger("editorZoom", e);
+
+        return true;
       });
 
-      //Select other node if selecting a new one
       editor.on('nodeselect', () => {
-        if(editor.selected.list.length !== 0) editor.selected.clear();
+        //Deselect other node if selecting a new one
+        if (editor.selected.list.length !== 0) editor.selected.clear();
 
         return true;
       });
@@ -313,26 +462,15 @@ export default {
         editor.trigger("nodeSelectionCleared");
       });
 
-      $(document).on('mouseenter', '.mouseEventBlocker', function(e){
-        mouseEventBlocker.set(e.currentTarget , true);
-      });
-
-      $(document).on('mouseleave', '.mouseEventBlocker', function(e){
-        mouseEventBlocker.delete(e.currentTarget );
-      });
-
-      window.addEventListener('beforeunload', function() {
-        //Save pipeline
-        localStorage.setItem("lastPipeline", createSaveData());
+      window.addEventListener('beforeunload', function () {
+        //Save pipelineState
+        localStorage.setItem("lastPipeline", DataExportService.createSaveData());
       }, false);
 
       //-----------------------------------------------------
 
-      const engine = new Rete.Engine('demo@0.1.0');
-
       components.map(c => {
         editor.register(c);
-        engine.register(c);
       });
 
       editor.view.resize();
@@ -343,105 +481,157 @@ export default {
     },
 
     compilePipeline() {
-      if(getPipelineStatus() !== PIPELINE_STATUS.STOPPED) return;
+      if (!PipelineService.isPipelineStopped()) return;
 
-      this.$refs.compilePipeModal.show();
+      this.$refs.sidebar.show();
+      this.$refs.opPresetBar.close();
+      this.pipelineError = null;
+      this.onHeatmapChange(0);
+
+      this.$refs.compilePipelineWindow.show();
     },
 
     simulatePipeline() {
-      if(getPipelineStatus() !== PIPELINE_STATUS.STOPPED) return;
+      if (!PipelineService.isPipelineStopped()) return;
 
       this.$refs.simulatePipeModal.show();
     },
 
     clearPipeline() {
-      for(let [,v] of operatorLookup) {
+      for (let v of PipelineService.getAllOperators()) {
         this.editor.removeNode(v);
       }
 
       this.onHeatmapChange(0);
+
+      this.pipelineError = null;
 
       this.editor.trigger("clear");
       executeEvent(EVENTS.CLEAR_PIPELINE, this.editor);
     },
 
     savePipeline() {
-      this.$refs.savePipeModal.show();
+      this.$refs.loadPipeModal.show(false);
     },
 
-    loadPipeline(){
-      this.$refs.loadPipeModal.show();
+    loadPipeline() {
+      this.$refs.loadPipeModal.show(true);
     },
 
     onStartButtonClicked() {
-      let status = getPipelineStatus();
+      if (PipelineService.isPipelineStopped()) {
+        //Start pipelineState
+        for (let v of PipelineService.getAllOperators()) v.component.reset(v);
 
-      if(status === PIPELINE_STATUS.STOPPED) {
-        //Start pipeline
-        for (let [,v] of operatorLookup) v.component.reset(v);
+        let pipelineData = PipelineService.createPipelineData();
 
-        let pipelineData = createPipelineData();
+        let data = {"pipeline": pipelineData, "meta": this.getStartMetaData()};
 
-        let data = {"pipeline": pipelineData, "meta": this._getStartMetaData()};
+        this.pipelineError = null;
 
-        server.startPipeline(data);
-      } else if(status === PIPELINE_STATUS.STARTED) {
-        //Stop pipeline
-        server.stopPipeline("");
+        PipelineService.setPipelineStatus(PIPELINE_STATUS.STARTING);
+
+        NetworkService.startPipeline(data).then((res) => {
+          if ((res === null || !res["res"]) && PipelineService.isPipelineStarting()) PipelineService.setPipelineStatus(PIPELINE_STATUS.STOPPED);
+
+          this.pipelineError = res?.error;
+        });
+      } else if (PipelineService.isPipelineStarted()) {
+        //Stop pipelineState
+        NetworkService.stopPipeline("");
       }
     },
+
+    // ---- Monitor ---- TODO: Move into separate modules? (including save/load data/props)
 
     onHeatmapChange(value) {
-      this.hmValue = value;
+      if (value === 0) this.$refs.heatmap.hide();
+      else this.$refs.heatmap.show(value);
 
-      if(value === 0) {
-        if(getPipelineStatus() === PIPELINE_STATUS.STARTED) server.changeHeatmapType({"hmType": value});
-        this.$refs.heatmap.hide();
-      } else {
-        if(getPipelineStatus() === PIPELINE_STATUS.STARTED) server.changeHeatmapType({"hmType": value});
-        this.$refs.heatmap.show(this.hmValue);
+      this.onMonitorConfigChange();
+    },
+
+    onMonitorConfigChange() {
+      if (PipelineService.isPipelineStarted()) NetworkService.changeMonitorConfig(this.getMonitorConfig());
+    },
+
+    getMonitorConfig() {
+      return {
+        "enabled": this.monitorEnabled,
+        "trackStats": this.monitorTrackStats,
+        "heatmapType": this.$refs.heatmap.hmType
+      };
+    },
+
+    // ---- Advisor ----
+
+    onAdvisorConfigChange() {
+      if (PipelineService.isPipelineStarted()) NetworkService.changeAdvisorConfig(this.getAdvisorConfig())
+    },
+
+    getAdvisorConfig() {
+      return {
+        "enabled": this.advisorEnabled,
       }
     },
 
-    onDebuggerTraversal(targetBranch, targetStep) {
-      if(getPipelineStatus() === PIPELINE_STATUS.STARTED)
-          server.socketSend({
-            "cmd": "debuggerStepChange",
-            "targetStep": targetStep,
-            "targetBranch": targetBranch,
-          })
-    },
+    // ---- Debugger ----
 
-    onDebuggerRequestStep(targetBranch, targetTime) {
-      if(getPipelineStatus() === PIPELINE_STATUS.STARTED)
-        server.requestDebuggerStep({
-          "targetTime": targetTime,
+    onDebuggerTraversal(targetBranch, targetStep) {
+      if (PipelineService.isPipelineStarted())
+        NetworkService.socketSend({
+          "cmd": "debuggerStepChange",
+          "targetStep": targetStep,
           "targetBranch": targetBranch,
         })
     },
 
+    onDebuggerRequestStep(targetBranch, targetTime) {
+      if (PipelineService.isPipelineStarted()) {
+        NetworkService.requestDebuggerStep({
+          "targetTime": targetTime,
+          "targetBranch": targetBranch,
+        }).then(function (data) {
+          if (system.$refs.debugger) system.$refs.debugger.onReceiveRequestedStep(data["branchID"], data["stepID"]);
+        });
+      }
+    },
+
     onDebuggerStateChange() {
-      if(getPipelineStatus() === PIPELINE_STATUS.STARTED)
-        server.changeDebuggerState({
+      if (PipelineService.isPipelineStarted())
+        NetworkService.changeDebuggerState({
           "historyActive": this.$refs.debugger ? this.$refs.debugger.isHistoryActive() : false,
-          "historyRewind":  this.$refs.debugger ? this.$refs.debugger.getRewind() : null
+          "historyRewind": this.$refs.debugger ? this.$refs.debugger.getRewind() : null
         });
     },
 
     onDebuggerConfigChange() {
-      if(getPipelineStatus() === PIPELINE_STATUS.STARTED)
-        server.changeDebuggerConfig({
-          "enabled": this.debuggerEnabled,
-          "debuggerMemoryLimit": this.$refs.historyMemSlider.getMemoryLimit(),
-          "debuggerStorageLimit": this.$refs.historyStorageSlider.getMemoryLimit(),
-          "historyRewindSpeed": this.$refs.historyRewindSpeedSlider.getValue(),
-          "historyRewindUseStepTime": this.debuggerRewindUseStepTime
-        });
+      if (PipelineService.isPipelineStarted()) NetworkService.changeDebuggerConfig(this.getDebuggerConfig());
     },
 
-    toggleAllDataMonitors(show) {
-      for (let [,node] of operatorLookup) {
+    getDebuggerConfig() {
+      return {
+        "enabled": this.debuggerEnabled,
+        "debuggerMemoryLimit": this.$refs.historyMemSlider.getMemoryLimit(),
+        "debuggerStorageLimit": this.$refs.historyStorageSlider.getMemoryLimit(),
+        "historyRewindSpeed": this.$refs.historyRewindSpeedSlider.getValue(),
+        "historyRewindUseStepTime": this.debuggerRewindUseStepTime,
+        "provenanceEnabled": this.debuggerProvenanceEnabled,
+        "provenanceAwaitUpdates": this.debuggerProvAwaitUpdates
+      };
+    },
+
+    onDebuggerProvQueryExecute(query) {
+      if (PipelineService.isPipelineStarted())
+        NetworkService.executeProvenanceQuery(query);
+    },
+
+    // -----------------------
+
+    toggleAllOperators(show) {
+      for (let node of PipelineService.getAllOperators()) {
         node.component.setDataMonitorState(node, show);
+        node.component.setOperatorSettingsState(node, show);
       }
     },
 
@@ -449,29 +639,63 @@ export default {
       AreaPlugin.zoomAt(this.editor);
     },
 
+    async autoArrange() {
+      let autoLayout = new AutoLayoutPipeline(this.editor);
+
+      await autoLayout.layout({
+        'elk.spacing.nodeNode': 75,
+        'elk.layered.spacing.nodeNodeBetweenLayers': 75
+      });
+
+      this.focusAll();
+    },
+
+    onPipelineUpdated(pipelineUpdate) {
+      this.pipelineError = null;
+
+      PipelineUpdateService.registerPipelineUpdate(pipelineUpdate);
+    },
+
     onSettingToggle(settingName, value) {
-      if(settingName === "advisor") {
+      if (settingName === "monitor") {
+        this.monitorEnabled = value;
+
+        this.onMonitorConfigChange();
+      } else if (settingName === "monitorTrackStats") {
+        this.monitorTrackStats = value;
+
+        this.onMonitorConfigChange();
+      } else if (settingName === "advisor") {
         this.advisorEnabled = value;
-        if(getPipelineStatus() === PIPELINE_STATUS.STARTED) server.toggleAdvisor({"enabled": value});
-      } else if(settingName === "debugger") {
-        if(this.$refs.debugger) this.$refs.debugger.reset();
+
+        this.onAdvisorConfigChange();
+      } else if (settingName === "debugger") {
+        if (this.$refs.debugger) this.$refs.debugger.reset();
 
         this.debuggerEnabled = value;
 
-        if(!this.debuggerEnabled) executeEvent(EVENTS.HISTORY_STATE_CHANGED, false);
+        if (!this.debuggerEnabled) executeEvent(EVENTS.HISTORY_STATE_CHANGED, false);
 
         this.onDebuggerConfigChange();
-      } else if(settingName === "debuggerStepNot") {
+      } else if (settingName === "debuggerStepNot") {
         this.debuggerStepNotifications = value;
 
-      } else if(settingName === "debuggerHistPrev") {
+      } else if (settingName === "debuggerHistPrev") {
         this.debuggerAllowHistoryPreview = value;
 
       } else if (settingName === "debuggerRewindUseStepTime") {
         this.debuggerRewindUseStepTime = value;
 
         this.onDebuggerConfigChange();
-      } else if(settingName === "restorePipeline") {
+      } else if (settingName === "debuggerProvenanceEnabled") {
+        this.debuggerProvenanceEnabled = value;
+
+        this.onDebuggerConfigChange();
+      } else if (settingName === "debuggerProvAwaitUpdates") {
+        this.debuggerProvAwaitUpdates = value;
+
+        this.onDebuggerConfigChange();
+      } else if (settingName === "restorePipeline") {
         this.restorePipeline = value;
 
         localStorage.setItem("restorePipeline", this.restorePipeline);
@@ -479,43 +703,29 @@ export default {
     },
 
     updatePipelineStartButton() {
-      let status = getPipelineStatus();
-
       let startBtn = $('#startButton');
 
-      if(status === PIPELINE_STATUS.STARTING) {
+      if (PipelineService.isPipelineStarting()) {
         startBtn.removeClass("startHidden").addClass("disabled");
         $('#startButton > .title').text("Start Pipeline");
-      } else if(status === PIPELINE_STATUS.STARTED) {
+      } else if (PipelineService.isPipelineStarted()) {
         startBtn.removeClass("startHidden").removeClass("disabled");
         $('#startButton > .title').text("Stop Pipeline");
-      } else if(status === PIPELINE_STATUS.STOPPED) {
+      } else if (PipelineService.isPipelineStopped()) {
         startBtn.addClass("startHidden").removeClass("disabled");
         $('#startButton > .title').text("Start Pipeline");
-      } else if(status === PIPELINE_STATUS.STOPPING) {
+      } else if (PipelineService.isPipelineStopping()) {
         startBtn.addClass("startHidden").addClass("disabled");
         $('#startButton > .title').text("Stop Pipeline");
       }
-
-      this.pipelineStatus = getPipelineStatus();
     },
 
-    _getStartMetaData() {
+    getStartMetaData() {
       return {
-        "advisorEnabled": this.advisorEnabled,
-        "heatmapType": this.hmValue,
-        "debuggerEnabled": this.debuggerEnabled,
-        "debuggerMemoryLimit": this.$refs.historyMemSlider.getMemoryLimit(),
-        "debuggerStorageLimit": this.$refs.historyStorageSlider.getMemoryLimit(),
-        "historyRewindSpeed": this.$refs.historyRewindSpeedSlider.getValue(),
-        "historyRewindUseStepTime": this.debuggerRewindUseStepTime
+        "monitor": this.getMonitorConfig(),
+        "debugger": this.getDebuggerConfig(),
+        "advisor": this.getAdvisorConfig(),
       };
-    }
-    },
-
-  computed: {
-    pipelineStopped() {
-      return this.pipelineStatus === PIPELINE_STATUS.STOPPED;
     }
   },
 
@@ -523,295 +733,58 @@ export default {
     heatmap: HeatmapTemplate,
     debugger: PipelineDebugger,
     historyMemSlider: HistoryMemorySlider,
-    historyStorageSlider: HistoryMemorySlider
+    historyStorageSlider: HistoryMemorySlider,
+    opPresetBar: OperatorPresetBar,
+    opPresetStoreModal: OperatorPresetStoreModal,
+    compilePipelineWindow: CompilePipelineWindow,
+  },
+
+  computed: {
+    pipelineStopped() {
+      return PipelineService.pipelineStatus === PIPELINE_STATUS.STOPPED;
+    }
   },
 
   data() {
     return {
-      hmValue: 0,
+      editor: null,
+
+      // Monitor
+      monitorEnabled: true,
+      monitorTrackStats: false,
+
+      // Advisor
       advisorEnabled: false,
+
+      // Debugger
       debuggerEnabled: false,
       debuggerStepNotifications: false,
       debuggerAllowHistoryPreview: false,
       debuggerRewindUseStepTime: true,
-      restorePipeline: localStorage.getItem("restorePipeline") === "true",
-      pipelineStatus: null,
-      editor: null
+      debuggerProvenanceEnabled: false,
+      debuggerProvAwaitUpdates: false,
+
+      // General
+      pipelineError: null,
+      restorePipeline: valueOr(localStorage.getItem("restorePipeline"), "true") === "true",
+      compileMode: false,
+      svVersion: SV_VERSION
     }
   },
 
   mounted() {
     initializeSystem(this);
+
     this.init();
 
-    //Load last stored pipeline if setting is set
-    if(this.restorePipeline) {
-      let pipeline = localStorage.getItem("lastPipeline");
-      if(pipeline !== undefined) loadSaveData(JSON.parse(pipeline));
-    }
-
     window.testUtils = new TestUtils(this.editor);
-  }
-}
 
-// ----------------------- SERVER CONNECTION -----------------------
-
-const server = new ServerConnector(3000, 3001, onSocketReceiveData);
-
-let reqPipelineUpdates = [];
-
-let uniqueUpdateID = 0;
-let listenPipelineChanges = true;
-
-const _serverReceiveCommands = {};
-_registerServerReceiveCommands();
-
-function _registerServerReceiveCommands() {
-  _serverReceiveCommands["opMonitorData"] = (data) => {
-    for(let i = 0; i < data.ops.length; i++) {
-      const entry = data.ops[i];
-
-      const opID = entry.id;
-      const opData = entry.data;
-      const opError = entry.error;
-      const stats = entry.stats;
-
-      setOpData(opID, opData, opError, stats);
+    //Load last stored pipelineState if setting is set
+    if (this.restorePipeline) {
+      let pipeline = localStorage.getItem("lastPipeline");
+      if (pipeline !== undefined) DataExportService.loadSaveData(JSON.parse(pipeline));
     }
   }
-
-  _serverReceiveCommands["conMonitorData"] = (data) => {
-    for(let i = 0; i < data.cons.length; i++) {
-      executeEvent(EVENTS.CONNECTION_DATA_UPDATED, data.cons[i]);
-    }
-  }
-
-  _serverReceiveCommands["msgBroker"] = (data) => {
-    for(let op of data.ops) {
-      let opID = op.id;
-
-      if(operatorLookup.has(opID)) {
-        const opNode = operatorLookup.get(opID);
-
-        opNode.component.setMessageBrokerState(opNode, op.broker);
-      }
-    }
-  }
-
-  _serverReceiveCommands["opError"] = (data) => {
-    const opID = data.op;
-
-    if(operatorLookup.has(opID)) {
-      const opNode = operatorLookup.get(opID);
-
-      opNode.component.setError(opNode, data.error);
-    }
-  }
-
-  _serverReceiveCommands["heatmap"] = (data) => {
-    for(const op of data.ops) {
-      if(operatorLookup.has(op.op)) {
-        const opNode = operatorLookup.get(op.op);
-        opNode.component.setHeatmapRating(opNode, op.rating);
-      }
-    }
-
-    system.$refs.heatmap.onDataUpdate(data.min, data.max, data.steps);
-  }
-
-  _serverReceiveCommands["opAdvisorSug"] = (data) => {
-    if(operatorLookup.has(data.opID)) {
-      const opNode = operatorLookup.get(data.opID);
-      opNode.component.setAdvisorSuggestions(opNode, data.sugs);
-    }
-  }
-
-  _serverReceiveCommands["debuggerData"] = async (data) => {
-    if(system.$refs.debugger) await synchronizeExecution(async () => {
-      await system.$refs.debugger.updateTimeline(data["active"], data["maxSteps"],
-        data["stepID"], data["branchID"],
-        data["branchStartTime"], data["branchEndTime"], data["branchStepOffset"],
-        data["memSize"], system.$refs.historyMemSlider.getMemoryLimit(),
-        data["diskSize"], system.$refs.historyStorageSlider.getMemoryLimit(), data["rewindActive"]);});
-  }
-
-  _serverReceiveCommands["debuggerHistoryEx"] = async (data) => {
-    if(system.$refs.debugger) {
-      await synchronizeExecution(async () => {
-        await system.$refs.debugger.onStepExecution(data.stepID, data.branchID, data.op, data.type, data.undo, data.stepTime);
-      });
-    }
-  }
-
-  _serverReceiveCommands["debUndoPendingPU"] = async (data) => {
-    await synchronizeExecution(async () => { await system.$refs.debugger.undoPendingUpdates(data["updateIDs"]); })
-  }
-
-  _serverReceiveCommands["debRegPU"] = (data) => {
-    if(system.$refs.debugger) {
-      system.$refs.debugger.onPipelineUpdateRegistered(data["updateIDs"], data["branchID"], data["stepID"], data["stepTime"]);
-    }
-  }
-
-  _serverReceiveCommands["debReqStep"] = (data) => {
-    if(system.$refs.debugger) {
-      system.$refs.debugger.onReceiveRequestedStep(data["branchID"], data["stepID"]);
-    }
-  }
-
-  _serverReceiveCommands["debSplit"] = (data) => {
-    if(system.$refs.debugger) {
-      system.$refs.debugger.onHistorySplit(data.branchID, data.parentID, data.splitTime, data.splitStep);
-    }
-  }
-
-  _serverReceiveCommands["debHGUpdate"] = (data) => {
-    if(system.$refs.debugger) {
-      system.$refs.debugger.onHistoryGraphUpdate(data["updates"]);
-    }
-  }
-
-  _serverReceiveCommands["triggerBP"] = async (data) => {
-    if(system.$refs.debugger) {
-      await synchronizeExecution(async () => {
-        await system.$refs.debugger.onStepExecution(data.stepID, data.op, data.type, null);
-
-        let op = operatorLookup.get(data.op);
-        if(!operatorLookup.has(data.op)) return;
-        op.vueContext.setBreakpointTriggered(data.bpIndex);
-      });
-    }
-  }
-
-  _serverReceiveCommands["status"] = (data) => {
-    let status = data.status;
-
-    if(status === "starting") {
-      setPipelineStatus(PIPELINE_STATUS.STARTING);
-    } else if(status === "started") {
-      setPipelineStatus(PIPELINE_STATUS.STARTED);
-    } else if(status === "stopping") {
-      setPipelineStatus(PIPELINE_STATUS.STOPPING);
-    }  else if(status === "stopped") {
-      setPipelineStatus(PIPELINE_STATUS.STOPPED);
-    }
-  }
-}
-
-async function onSocketReceiveData(data) {
-  if(data.cmd in _serverReceiveCommands) await _serverReceiveCommands[data.cmd](data);
-}
-
-window.setInterval(() => {
-  if(getPipelineStatus() === PIPELINE_STATUS.STARTED) {
-    if (reqPipelineUpdates.length > 0) {
-      const copy = reqPipelineUpdates;
-      let updateID = uniqueUpdateID;
-
-      reqPipelineUpdates = [];
-      uniqueUpdateID++;
-
-      const updateData = [];
-      for(let u of copy) updateData.push(u.createSocketData());
-
-      sendPipelineUpdates(updateData, updateID);
-    }
-  } else {
-    reqPipelineUpdates = [];
-    uniqueUpdateID = 0;
-  }
-}, 250);
-
-function canRegisterPipelineUpdate() { return getPipelineStatus() === PIPELINE_STATUS.STARTED && listenPipelineChanges; }
-
-function registerPipelineUpdate(update) {
-  if(reqPipelineUpdates.length > 0) {
-    const lastElm = reqPipelineUpdates[reqPipelineUpdates.length - 1];
-    if(lastElm.checkUpdate(update)) return;
-  }
-
-  reqPipelineUpdates.push(update);
-}
-
-function sendPipelineUpdates(updateData, updateID) {
-  const data = {};
-  data["updates"] = updateData;
-  data["cmd"] = "pipelineUpdate";
-  data["updateID"] = updateID;
-
-  server.socketSend(data);
-}
-
-export function sendPipelineCompile(compileData) {
-  if(getPipelineStatus() !== PIPELINE_STATUS.STOPPED) return;
-
-  server.compile(createPipelineData(), compileData);
-}
-
-export function sendPipelineSimulate(simulateData) {
-  if(getPipelineStatus() !== PIPELINE_STATUS.STOPPED) return;
-
-  for (let [,v] of operatorLookup) v.component.reset(v);
-
-  server.simulate(createPipelineData(), simulateData, system._getStartMetaData());
-}
-
-export function listenForPipelineChanges(listen) { listenPipelineChanges = listen; }
-
-// ----------------------- ------------------------- ---------------
-
-function createPipelineData() {
-  const data = {
-    operators: []
-  };
-
-  for (const [,v] of operatorLookup) {
-    data.operators.push(v.component.getPipelineData(v));
-  }
-
-  return data;
-}
-
-function setOpData(opID, opData, opError, stats) {
-  if(operatorLookup.has(opID)) {
-    const opNode = operatorLookup.get(opID);
-
-    opNode.component.setValue(opNode, opData);
-    opNode.component.setError(opNode, opError);
-    if(stats != null) opNode.component.setStats(opNode, stats);
-  }
-}
-
-export function hasMouseEventBlocker() {
-  return mouseEventBlocker.size > 0;
-}
-
-export function getOperatorByID(opID) {
-  if(operatorLookup.has(opID)) return operatorLookup.get(opID);
-  return null;
-}
-
-export const operatorLookup = new Map();
-export const connectionLookup = new Map();
-
-export let uniqueConnectionIDCounter = 0;
-
-export function getUniqueUpdateID() { return uniqueUpdateID; }
-
-// Contains elements that block (consume) translate, zoom events
-export const mouseEventBlocker = new Map();
-
-// ----------------------- DATA EXPORT -----------------------
-
-// Contains elements that need to export / import data when saving the pipeline
-const dataExporters = new Map();
-
-export function registerDataExporter(key, getFunction, setFunction) {
-  dataExporters.set(key, {"getData": getFunction, "setData": setFunction});
-}
-
-export function getDataExporter() {
-  return dataExporters.entries()
 }
 
 </script>
@@ -852,7 +825,7 @@ select, input {
   padding-right: 5px;
   padding-top: 5px;
 
-  border-bottom: 2px solid #dedede;
+  border-bottom: 2px solid var(--main-border-color);
 }
 
 #content {
@@ -877,12 +850,12 @@ select, input {
 
   top:6px;
   border-radius: 6px;
-  background: #444;
+  background: var(--main-font-color);
   color:white;
   height:30px;
   padding: 6px 2px 0;
   position:absolute;
-  left:330px;
+  left:235px;
   width: 143px;
 
   -webkit-touch-callout: none; /* iOS Safari */
@@ -901,9 +874,9 @@ select, input {
 #startButton:active {
   background: #666;
   outline: none;
-  -webkit-box-shadow: inset 0 0 5px #444;
-  -moz-box-shadow: inset 0 0 5px #444;
-  box-shadow: inset 0 0 5px #444;
+  -webkit-box-shadow: inset 0 0 5px var(--main-font-color);
+  -moz-box-shadow: inset 0 0 5px var(--main-font-color);
+  box-shadow: inset 0 0 5px var(--main-font-color);
 }
 
 #startButton > .loader {
@@ -935,6 +908,29 @@ select, input {
   right:0;
 }
 
+#startButton .pipelineError {
+  color: red;
+  position: absolute;
+  right: 3px;
+  top: 3px;
+}
+
+#svHeading {
+  position: absolute;
+  right: 12px;
+  color:var(--main-border-color);
+  font-size: 24px;
+  font-weight: bold;
+  top:6px;
+  pointer-events: none;
+}
+
+#svHeading #svVersion {
+  font-size: 0.5em;
+  font-style: italic;
+  padding-left: 1px;
+}
+
 </style>
 
 <style>
@@ -951,12 +947,16 @@ select, input {
 }
 
 #pageMenu .menu {
-  background-color: #444 !important;
+  background-color: var(--main-font-color) !important;
   text-align: left;
 }
 
 #pageMenu .menuitem {
   font-weight: normal;
+}
+
+#pageMenu .menuitem:hover {
+  background-color: var(--main-hover-color) !important;
 }
 
 .menubaritem .disabled {

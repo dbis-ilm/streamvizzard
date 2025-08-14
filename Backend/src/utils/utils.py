@@ -1,86 +1,54 @@
-import re
 import sys
 import warnings
+from typing import Dict, Any
 
 
-def remap(val, from1, to1, from2, to2):
-    return (val - from1) / (to1 - from1) * (to2 - from2) + from2
+def remap(val, sourceFrom, sourceTo, targetFrom, targetTo):
+    return (val - sourceFrom) / (sourceTo - sourceFrom) * (targetTo - targetFrom) + targetFrom
 
 
 def clamp(val, minV, maxV):
     return max(minV, min(val, maxV))
 
 
-def createUDFFunction(c: str, includePersistent: bool) -> str:
-    code = ""
-
-    lines = c.split("\n")
-
-    # Global store + function register
-
-    if includePersistent:
-        code += "store = persistent\n"
-
-    code += "def func(input, tuple):\n"
-
-    if includePersistent:
-        code += "\n    global store"
-
-    # Insert function code
-
-    for line in lines:
-        code += "\n    " + line
-
-    # Function call and result
-
-    code += "\nres = func(data, tuple)"
-
-    if includePersistent:
-        code += "\npersistent = store"
-
-    return code
-
-
-def instantiateUserDefinedClass(operator, code, oldInstance):
-    # Destroy old instance
-
-    if oldInstance is not None:
-        oldInstance.onDestroy()
-
-    # Extract className from data (first occurrence)
-
-    className = None
-
-    m = re.search('(?<=class)(.*)', code)
-    if m:
-        className = m.groups()[0].replace(":", "").strip()
-
-    if className is None:
-        return None
-
-    # Instantiate object of class
-
-    from spe.runtime.structures.tuple import Tuple
-    loc = {"Tuple": Tuple}
-
-    # If exec gets two separate objects as globals and locals, the code will be executed
-    # as if it were embedded in a class definition -> Use same, empty loc
+def tryParseInt(value: str, default) -> int:
     try:
-        exec(compile(code, className, "exec"), loc, loc)
-    except Exception:
-        operator.onExecutionError()
+        return int(value)
+    except (ValueError, TypeError):
+        return default
 
-        return None
 
-    newInstance = loc[className]()
-    newInstance.baseOp = operator
+def tryParseFloat(value: str, default) -> float:
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
 
-    # Initialize new instance
 
-    if newInstance is not None:
-        newInstance.onStart()
+def parseBool(value: str) -> bool:
+    return value.lower() in ('true', '1', 'yes', 'on')
 
-    return newInstance
+
+def valueOr(value, defaultVal):
+    if value is not None:
+        return value
+    return defaultVal
+
+
+def escapeStr(data: str, encode: bool) -> str:
+    if encode:  # Escapes all control sequences \n => \\n
+        return data.encode('unicode_escape').decode("utf-8")
+    else:  # Removes escapes from control sequences \\n => \n
+        return data.encode('utf-8').decode('unicode_escape')
+
+
+def escapeStrInDict(data: Dict[Any, str], encode: bool) -> Dict:
+    data = data.copy()  # Make sure not to override original data
+
+    for k in data.keys():
+        data[k] = escapeStr(data[k], encode)
+
+    return data
 
 
 def printWarning(msg: str):

@@ -71,19 +71,11 @@ class HistoryBufferManager:
         if not self._initialized:
             return
 
-        # Register both DebugTuples [DT] if not yet stored
-
-        addedToBuffer = False
-
-        if step.prevDebugTuple is not None and step.prevDebugTuple.refCount == 1:
-            self._cacheDTChunked(step, step.prevDebugTuple)
-            addedToBuffer = True
+        # Register DebugTuple [DT] if not yet stored
 
         if step.debugTuple.refCount == 1:
             self._cacheDTChunked(step, step.debugTuple)
-            addedToBuffer = True
 
-        if addedToBuffer:
             self._adjustBuffer()
 
     def updateDT(self, dt: DebugTuple, deltaSize: float):
@@ -148,8 +140,8 @@ class HistoryBufferManager:
         # This is only necessary, if we already have data on disk because on traversal
         # unsaved chunks might evict chunks on disk and interfere with traversed state
 
-        if self._currentStorageMemorySize > 0:  # TODO: WE NEED TO WAIT FOR COMPLETION BEFORE USER IS ALLOWED TO TRAVERSE / CONTINUE! (MAYBE ADD A LOCK TO BUFFER ACCESS?)
-            self.flushCache()
+        if self._currentStorageMemorySize > 0:
+            self.flushCache()  # This call blocks until buffer is adapted
 
     # -------------------------------- BUFFER -------------------------------
 
@@ -228,9 +220,6 @@ class HistoryBufferManager:
 
             if step.debugTuple.refCount <= 0:
                 self._handleDTRemoval(step.debugTuple)
-
-            if step.prevDebugTuple is not None and step.prevDebugTuple.refCount <= 0:
-                self._handleDTRemoval(step.prevDebugTuple)
 
         return True
 

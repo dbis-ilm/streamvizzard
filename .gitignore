@@ -1,6 +1,8 @@
 .DS_Store
-Frontend/node_modules
-Frontend/dist
+frontend/node_modules
+frontend/dist
+backend/out
+backend/res
 
 
 # local env files
@@ -23,10 +25,12 @@ pnpm-debug.log*
 *.sw?
 
 # compiler output files
-Backend/out/**
+backend/out/**
 
 # Python cache files
 *.pyc
+**/__pycache__/
 
 
-Frontend/package-lock.json
+backend/poetry.lock
+frontend/package-lock.json

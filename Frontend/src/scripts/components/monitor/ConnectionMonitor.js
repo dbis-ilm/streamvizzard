@@ -1,8 +1,7 @@
 import {clamp, remap} from "@/scripts/tools/Utils";
 import $ from "jquery";
-import {connectionLookup} from "@/components/Main";
 import {EVENTS, registerEvent} from "@/scripts/tools/EventHandler";
-import {getPipelineStatus, PIPELINE_STATUS} from "@/scripts/tools/PipelineStatus";
+import {PipelineService, PIPELINE_STATUS} from "@/scripts/services/pipelineState/PipelineService";
 
 // ---------------------- INTERFACE ----------------------
 
@@ -23,8 +22,12 @@ export function initializeConnectionMonitor(editor) {
 
     //Recalculate minMax every few seconds in case max or min are not valid anymore
     window.setInterval(() => {
-        if(getPipelineStatus() === PIPELINE_STATUS.STARTED) calculateMinMax();
+        if(PipelineService.isPipelineStarted()) calculateMinMax();
     }, 2500);
+}
+
+export function resetConnectionMonitor() {
+    reset();
 }
 
 // -------------------------------------------------------
@@ -38,9 +41,9 @@ function onConnectionDataUpdate(entry) {
     const throughput = entry.tp;
     const total = entry.total;
 
-    if(connectionLookup.has(conID)) {
-        const connection = connectionLookup.get(conID);
+    const connection = PipelineService.getConnectionByID(conID);
 
+    if(connection != null) {
         if(connection.total !== total) { //If there were new tuples produced we increase tick to play animation
             connection.lastTick = Date.now();
             connection.forward = connection.total < total;
@@ -74,6 +77,15 @@ function addConnectionMonitor(con) {
     pick.append("<title class='conHoverTitle' data-id='" + con.id + "'></title>");
     pick.css("pointer-events", "all");
 
+    // Visual hover for connections
+    pick.attr("onmouseover", "this.parentElement.classList.add('hovered');");
+    pick.attr("onmouseleave", "this.parentElement.classList.remove('hovered');");
+
+    con.hover = function(show) {
+        if(show) con.$el.parentElement.classList.add('hovered');
+        else con.$el.parentElement.classList.remove('hovered');
+    };
+
     //Update html to trigger rebind of native title hover
     jqueryEl.closest("svg").prop('outerHTML', jqueryEl.closest("svg").prop('outerHTML'));
 
@@ -102,7 +114,7 @@ function resetMinMax() {
 function reset() {
     resetMinMax();
 
-    for(let k of connectionLookup.values()) {
+    for(let k of PipelineService.getAllConnections()) {
         k.throughput = 0;
         k.total = 0;
         k.lastTick = 0;
@@ -143,14 +155,14 @@ function updateMinMax(con) {
     }
 
     if(minMaxChanged) {
-        for(let k of connectionLookup.values())  updateConnectionStyle(k);
+        for(let k of PipelineService.getAllConnections())  updateConnectionStyle(k);
     }
 }
 
 function calculateMinMax() {
     resetMinMax();
 
-    for(let k of connectionLookup.values()) {
+    for(let k of PipelineService.getAllConnections()) {
         if(k.total > monitorTotalGlobals[1]) monitorTotalGlobals[1] = k.total * 1.25;
         if(k.total < monitorTotalGlobals[0]) monitorTotalGlobals[0] = k.total * 0.8;
 
@@ -158,11 +170,11 @@ function calculateMinMax() {
         if(k.throughput < monitorTPGlobals[0]) monitorTPGlobals[0] = k.throughput * 0.8;
     }
 
-    for(let k of connectionLookup.values())  updateConnectionStyle(k);
+    for(let k of PipelineService.getAllConnections())  updateConnectionStyle(k);
 }
 
 function updateConnectionStyle(connection) {
-    connection.hoverTitle.html("Throughput: " + connection.throughput.toFixed(2) + " tuples / s\nTotal: " + connection.total);
+    connection.hoverTitle.html("Connection ID: " + connection.id + "\nThroughput: " + connection.throughput.toFixed(2) + " tuples / s\nTotal tuples: " + connection.total);
 
     // -------------- Value Calculation --------------
 
@@ -204,7 +216,7 @@ function setupMonitorAnimation() {
         let maxSpeed = monitorAnimationSpeed[1] - minSpeed;
 
         //Perform the animation of each connection if it's "active"
-        for(let connection of connectionLookup.values()) {
+        for(let connection of PipelineService.getAllConnections()) {
             //If we did not receive a recent tick, we don't animate this connection
             if(now >= connection.lastTick + monitorConAnimationTickDuration) continue;
 

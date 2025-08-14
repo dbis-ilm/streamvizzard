@@ -11,7 +11,7 @@ export default class _HTTPGet extends Component {
 
     builder(node) {
         node.url = new StringControl(node, 'url', false, '', "URL");
-        node.rate = new NumControl(node, 'rate', false, 5, "Rate",
+        node.rate = new NumControl(node, 'rate', false, 30, "Rate",
             "How many requests per second are done", 0)
 
         return this.onBuilderInitialized(node,
@@ -19,17 +19,5 @@ export default class _HTTPGet extends Component {
             [],
             [{name: "Data", socket: strSocket}],
             [node.url, node.rate]);
-    }
-
-    getData(node) {
-        return {
-            url: node.url.getValue(),
-            rate: node.rate.getValue()
-        }
-    }
-
-    setData(node, data) {
-        node.url.setValue(data.url);
-        node.rate.setValue(data.rate);
     }
 }

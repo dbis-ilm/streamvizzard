@@ -5,7 +5,7 @@ import cv2
 
 from spe.pipeline.operators.imageProc.dataTypes.image import Image
 from spe.pipeline.operators.source import Source
-from spe.runtime.structures.timer import Timer
+from spe.common.timer import Timer
 
 
 class VideoFile(Source):
@@ -16,15 +16,17 @@ class VideoFile(Source):
 
         self.path = ""
         self.repeat = False
+        self.limitRate = False
         self.frameRate = 0
 
     def setData(self, data: json):
         self.path = data["path"]
-        self.repeat = data["repeat"] == 1
+        self.repeat = data["repeat"]
         self.frameRate = data["frameRate"]
+        self.limitRate = data["limitRate"]
 
     def getData(self) -> dict:
-        return {"path": self.path, "repeat": 1 if self.repeat else 0, "frameRate": self.frameRate}
+        return {"path": self.path, "repeat": self.repeat, "frameRate": self.frameRate, "limitRate": self.limitRate}
 
     def onRuntimeDestroy(self):
         super(VideoFile, self).onRuntimeDestroy()
@@ -81,7 +83,8 @@ class VideoFile(Source):
                 # This will actually take a little more time than the desired rate because of windows tick rate
                 # On Windows system sometimes the tick rate is around 13ms which differs a lot from the desired rate
 
-                sleepTime = max(0, (1.0 / self.frameRate) - (endTime - startTime))
+                if self.limitRate:
+                    sleepTime = max(0, (1.0 / self.frameRate) - (endTime - startTime))
 
-                if sleepTime >= 1 / 1000:
-                    time.sleep(sleepTime)
+                    if sleepTime > 1e-3:
+                        time.sleep(sleepTime)

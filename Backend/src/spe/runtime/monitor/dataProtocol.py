@@ -1,31 +1,15 @@
 from __future__ import annotations
 
 import json
-import logging
-import traceback
 from typing import Dict, List
 from typing import TYPE_CHECKING
 
-from spe.pipeline.operators.operatorDB import getJSONEncoderForDataType
+from spe.common.serialization.jsonSerialization import serializeToJSON
 
 if TYPE_CHECKING:
     from spe.pipeline.connection import Connection
     from spe.pipeline.operators.operator import Operator
     from spe.runtime.monitor.heatmap import HeatmapResult
-
-# TODO: REWORK, THIS HAS TO MANY DEPENDENCIES AND MAKES IMPORTING THIS MODULE DIFFICULT FOR CIRCULAR DEP..
-
-
-def _defaultEncoder(z):
-    encoder = getJSONEncoderForDataType(z)
-    if encoder is not None:
-        try:
-            return encoder(z)
-        except Exception:
-            logging.log(logging.ERROR, traceback.format_exc())
-
-    type_name = z.__class__.__name__
-    raise TypeError(f"Object of type {type_name} is not serializable")
 
 
 def createOperatorData(operators: List[Operator]) -> json:
@@ -40,17 +24,12 @@ def createOperatorData(operators: List[Operator]) -> json:
 
         resData["id"] = op.id
         resData["data"] = monitor.getDisplayData()
-        resData["error"] = monitor.retrieveError()
-
-        stats = None
-
-        resData["stats"] = stats
 
         ops.append(resData)
 
     obj["ops"] = ops
 
-    return json.dumps(obj, default=_defaultEncoder)
+    return serializeToJSON(obj)
 
 
 def createConnectionData(connections: List[Connection]) -> json:
@@ -69,7 +48,7 @@ def createConnectionData(connections: List[Connection]) -> json:
 
     obj["cons"] = cons
 
-    return json.dumps(obj, default=_defaultEncoder)
+    return json.dumps(obj)
 
 
 def createMessageBrokerData(operators: List[Operator]):
@@ -100,4 +79,4 @@ def createHeatmapData(hmData: HeatmapResult) -> json:
     obj["max"] = hmData.maxVal
     obj["steps"] = hmData.legendSteps
 
-    return json.dumps(obj, default=_defaultEncoder)
+    return json.dumps(obj)

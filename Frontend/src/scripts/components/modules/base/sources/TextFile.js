@@ -11,33 +11,22 @@ export default class _TextFile extends Component {
     }
 
     builder(node) {
-        node.repeatCtrl  = new BoolControl(node, 'boolCtrl', false, 'Loop',
-            'Repeats from the start when reaching end of file', true);
-        node.srcCtrl = new StringControl(node, 'srcCtr', false, 'C:/Users/timor/Downloads/ilmenau_weather.json');
-        node.lineSepCtrl = new StringControl(node, 'lineSepCtrl', false, '\\n');
+        node.repeat = new BoolControl(node, 'repeat', false, 'Loop',
+            'Repeats from the start when reaching end of file', false);
+        node.path = new StringControl(node, 'path', false, '', "Path");
+        node.limitRate = new BoolControl(node, 'limitRate', false, 'Limit Rate',
+            'If the source should produce tuples in a fixed rate', true);
         node.rate = new NumControl(node, 'rate', false, 30, "Rate",
             "How many lines per second are processed", 0)
+
+        node.limitRate.onChangeCallback = (val) => {
+            node.rate.show = val;
+        };
 
         return this.onBuilderInitialized(node,
             new Display(node, STRING_DT.name),
             [],
             [{name: "Line", socket: strSocket}],
-            [node.repeatCtrl, node.srcCtrl, node.lineSepCtrl, node.rate]);
-    }
-
-    getData(node) {
-        return {
-            path: node.srcCtrl.getValue(),
-            lineSep: node.lineSepCtrl.getValue(),
-            repeat: node.repeatCtrl.getValue() ? 1 : 0,
-            rate: node.rate.getValue()
-        }
-    }
-
-    setData(node, data) {
-        node.srcCtrl.setValue(data.path);
-        node.lineSepCtrl.setValue(data.lineSep);
-        node.repeatCtrl.setValue(data.repeat === 1);
-        node.rate.setValue(data.rate);
+            [node.repeat, node.path, node.limitRate, node.rate]);
     }
 }

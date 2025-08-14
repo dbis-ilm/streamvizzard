@@ -1,9 +1,6 @@
 import $ from "jquery";
 import Vue from "vue";
-import {getDataExporter} from "@/components/Main";
 import {system} from "@/main";
-import AreaPlugin from "rete-area-plugin";
-import {EVENTS, executeEvent} from "@/scripts/tools/EventHandler";
 import Rete from "rete";
 
 export async function sleep(seconds) {
@@ -11,7 +8,6 @@ export async function sleep(seconds) {
         setTimeout(() => resolve("done"), seconds * 1000)
     });
 }
-
 
 export function formatTime ( seconds, minVal = 0.01, minBreakPoint = 300) {
     let sAbs = Math.abs(seconds);
@@ -107,19 +103,17 @@ export function clamp(val, min, max) {
 
 export function makeResizable(jqElement, node, key, autoHide = false) {
     Vue.nextTick(function() {
-        jqElement.parent().css("display", "flex"); //In case of dynamically created elements
+        jqElement.parent().addClass("resizableCtrl"); //In case of dynamically created elements
 
         node.vueContext.registerResizable(jqElement, key);
-
-        jqElement.css("flex-grow", "1");
 
         jqElement.resizable({
             autoHide: autoHide,
             start: function() {
-                $(node.vueContext.$el).addClass("mouseEventBlocker");
+                node.isResized = true;
             },
             stop: function() {
-                $(node.vueContext.$el).removeClass("mouseEventBlocker");
+                node.isResized = false;
             },
             resize(event, ui) {
                 node.vueContext.onElementResize(key, ui.size);
@@ -130,14 +124,19 @@ export function makeResizable(jqElement, node, key, autoHide = false) {
     });
 }
 
-export function makeGenericResizable(jqElement, onResize = null, autoHide = false) {
+export function makeGenericResizable(jqElement, onResize = null, autoHide = false, handles = null) {
     Vue.nextTick(function() {
         jqElement.resizable({
             autoHide: autoHide,
+            handles: handles,
             resize(event, ui) {
                 if(onResize != null) onResize(ui.size);
             }
         });
+
+        // Add handle icons because jquery only provides the SE icon
+        jqElement.find('.ui-resizable-ne').addClass('resizableHandleNE ui-icon ui-icon-gripsmall-diagonal-se');
+        jqElement.find('.ui-resizable-nw').addClass('resizableHandleNW ui-icon ui-icon-gripsmall-diagonal-se');
     });
 }
 
@@ -194,6 +193,15 @@ export function makeNameInput(jqElement, triggerElement, disabledCssClass) {
             jqElement.css("pointer-events", "none");
             jqElement.css("text-decoration", "none");
             jqElement.blur();
+
+            e.preventDefault();
+        }
+    });
+
+    // Forbid line-break value inside input/textarea
+    jqElement.on("keydown", function(e) {
+        if (e.key === 'Enter' || e.keyCode === 13) {
+            e.preventDefault();
         }
     });
 
@@ -205,26 +213,29 @@ export function makeNameInput(jqElement, triggerElement, disabledCssClass) {
     });
 }
 
-export function hexToRgb(hex) {
-    let result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    return result ? {
-        r: parseInt(result[1], 16),
-        g: parseInt(result[2], 16),
-        b: parseInt(result[3], 16)
-    } : null;
-}
-
-export function safeVal(val, def) {
+export function safeVal(val, def=null) {
     return val !== undefined ? val : def;
 }
 
-export function registerAutoBorderSize(element, defaultSize, onZoom= null, onInitial = null) {
-    let refZoom = 0.4;
+export function valueOr(val, def=null) {
+    return safeVal(val) != null ? val : def;
+}
 
-    system.editor.on('zoom', data => {
-        let zoomFac = refZoom / data.zoom;
+export function registerAutoBorderSize(element, defaultSize, onZoom= null) {
+    let refZoom = 1;
 
-        element.style.borderWidth = Math.max(defaultSize, (zoomFac * defaultSize)) + "px";
+    // TODO: Optimize border width / radius calculation to avoid pixelation
+    system.editor.on('editorZoom', function(data) {
+        // Don't rely on the default zoom event since this might be canceled
+        let zoomAmount = data.zoom;
+        let zoomFac = refZoom / zoomAmount;
+
+        // Add a little offset to fight aliasing and pixel rounding errors
+        let bonusOffset = (zoomAmount < 1 ? 1 : 0) * (remap(clamp(zoomAmount, 0.5, 1), 0.5, 1, 1, 0));
+
+        element.style.borderWidth = Math.max(defaultSize, (zoomFac * defaultSize) + bonusOffset) + "px";
+
+        // Resize observer might not detect changes in border if content-box is set
 
         if(onZoom != null) onZoom(zoomFac);
     });
@@ -234,119 +245,7 @@ export function registerAutoBorderSize(element, defaultSize, onZoom= null, onIni
 
     element.style.borderWidth = Math.max(defaultSize, (zoomFac * defaultSize)) + "px";
 
-    if(onInitial != null) onInitial(zoomFac);
-}
-
-// ----------------------------------------- SAVE / LOADING OPERATORS --------------------------------------------------
-
-export function getOperatorSaveData(node) {
-    let data = node.component.getData(node);
-
-    let inputs = [];
-    for(let input of node.inputs) {
-        inputs.push({"id": input[1].key, "name": input[1].name});
-    }
-
-    let outputs = [];
-    for(let output of node.outputs) {
-        outputs.push({"id": output[1].key, "name": output[1].name});
-    }
-
-    let conData = {"inputs": inputs, "outputs": outputs};
-
-    let obj = {"id": node.id, "data": data, "dName": node.viewName, "conData": conData,
-        "monitor": node.component.getMonitorData(node), "breakPoints": node.component.getBreakpoints(node)};
-
-    obj["ctrlResizes"] = node.vueContext.getResizeData();
-
-    return obj;
-}
-
-export async function loadOperatorFromSaveData(operator, sd) {
-    let opData = sd.data;
-
-    await operator.component.setData(operator, opData);
-
-    operator.viewName = sd.dName;
-
-    if(sd.ctrlResizes !== undefined) {
-        for(let r of sd.ctrlResizes) {
-            operator.vueContext.resizeElement(r.id, r.data.width, r.data.height);
-        }
-    }
-
-    //Load monitor data
-    if(sd.monitor !== undefined) {
-        operator.component.setMonitorData(operator, sd.monitor);
-    }
-
-    //Load breakpoints
-    if(sd.breakPoints !== undefined) {
-        operator.component.setBreakpoints(operator, sd.breakPoints);
-    }
-
-    //Apply connection data
-
-    let conData = sd.conData;
-
-    for(let input of conData.inputs) {
-        let conID = input.id;
-        let conName = input.name;
-
-        //Find corresponding input with this key
-        for(let opInput of operator.inputs) {
-            if(opInput[1].key === conID) {
-                opInput[1].name = conName;
-
-                break;
-            }
-        }
-    }
-
-    for(let output of conData.outputs) {
-        let conID = output.id;
-        let conName = output.name;
-
-        //Find corresponding input with this key
-        for(let opOutput of operator.outputs) {
-            if(opOutput[1].key === conID) {
-                opOutput[1].name = conName;
-
-                break;
-            }
-        }
-    }
-}
-
-export function createSaveData() {
-    let res = {};
-
-    // Get data from registered data exporters
-    for(let [k, v] of getDataExporter()) res[k] = v.getData();
-
-    return JSON.stringify(res);
-}
-
-export async function loadSaveData(json) {
-    //BACKWARD COMPATIBILITY FOR OLD SAVE FILES!
-    if("graph" in json && "op" in json) {
-        json["pipeline"] = {"graph": json.graph, "op": json.op};
-
-        delete json["graph"];
-        delete json["op"];
-    }
-
-    // Get data from json and push it to correct registered data exporters
-    for(let k in json) {
-        for(let [ek, v] of getDataExporter()) {
-            if(ek === k) await v.setData(json[k]);
-        }
-    }
-
-    system.editor.view.resize();
-    AreaPlugin.zoomAt(system.editor);
-
-    executeEvent(EVENTS.PIPELINE_LOADED);
+    if(onZoom != null) onZoom(zoomFac);
 }
 
 export async function createNode(component, { id = null, x = 0, y = 0 }) {
@@ -358,4 +257,20 @@ export async function createNode(component, { id = null, x = 0, y = 0 }) {
     await component.builder(node);
 
     return node;
+}
+
+export function createConnection(editor, output, input, id=null) {
+    //Override connect to set id before calling the events
+    if (!editor.trigger('connectioncreate', { output, input })) return;
+
+    try {
+        const connection = output.connectTo(input);
+
+        if(id != null) connection.id = id;
+        editor.view.addConnection(connection);
+
+        editor.trigger('connectioncreated', connection);
+    } catch (e) {
+        editor.trigger('warn', e);
+    }
 }

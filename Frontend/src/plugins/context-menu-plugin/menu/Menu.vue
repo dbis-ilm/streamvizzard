@@ -21,6 +21,7 @@ import hideMixin from './debounceHide'
 import Item from './Item.vue';
 import Search from './Search.vue';
 import { fitViewport } from '../utils';
+import {EditorInputManager} from "@/scripts/services/EditorInputManager";
 
 export default {
   props: { searchBar: Boolean, searchKeep: Function },
@@ -86,10 +87,13 @@ export default {
       this.args = args;
 
       this.cancelHide();
+
+      EditorInputManager.onInputSelected(this.$el);
     },
     hide() {
-      if(this.$refs.search) this.$refs.search.onHide();
       this.visible = false;
+
+      EditorInputManager.onInputDeselected(this.$el);
     },
     additem(title, onClick, path = []) {
       let items = this.items;
@@ -148,7 +152,7 @@ export default {
 .contextMenuItem {
   color: #fff;
   padding: 4px;
-  background-color: #444;
+  background-color: var(--main-font-color);
   cursor: pointer;
   width: 100%;
   position: relative;
@@ -169,7 +173,7 @@ export default {
 }
 
 .contextMenuItem:hover {
-  background-color: rgb(127, 127, 127)
+  background-color: var(--main-hover-color);
 }
 
 </style>

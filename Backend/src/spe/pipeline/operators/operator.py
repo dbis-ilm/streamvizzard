@@ -1,30 +1,38 @@
+from __future__ import annotations
 import asyncio
-import json
 import logging
 import sys
 import traceback
+import uuid
 from asyncio import Future
 from collections import deque
 from enum import Enum
-from typing import Optional, List, Deque
+from typing import Optional, List, Deque, Dict, TYPE_CHECKING, Type, Set
 
-import config
 from spe.pipeline.socket import Socket
 from abc import ABC, abstractmethod
 
+from spe.runtime.compiler.definitions.compileOpFunction import InferExecutionCodeCOF
+from spe.runtime.compiler.definitions.compileOpMetaData import CompileOpMetaData
+from spe.runtime.compiler.definitions.compileOpSpecs import CompileOpSpecs
 from spe.runtime.debugger.debugMethods import debugMethod
-from spe.runtime.debugger.debugStep import DebugStepType, DebugStep
+from spe.runtime.debugger.debugStep import DebugStepType, StepContinuation
 from spe.runtime.debugger.debugTuple import DebugTuple
 from spe.runtime.debugger.history.historyState import HistoryState
-from spe.runtime.runtimeCommunicator import isDebuggerEnabled, onOpMessageQueueChanged, getHistoryState
-from spe.runtime.structures.iEventEmitter import IEventEmitter
-from spe.runtime.structures.timer import Timer
-from spe.runtime.structures.tuple import Tuple
+from spe.common.iEventEmitter import IEventEmitter
+from spe.common.timer import Timer
+from spe.common.tuple import Tuple
+from streamVizzard import StreamVizzard
+from utils.messages import Messages
+
+if TYPE_CHECKING:
+    from spe.pipeline.connection import Connection
 
 
 class OperatorType(Enum):
     DEFAULT = 1
     SOURCE = 2
+    SINK = 3
 
 
 class Operator(ABC, IEventEmitter):
@@ -39,23 +47,23 @@ class Operator(ABC, IEventEmitter):
     EVENT_TUPLE_PRE_PROCESSED = "preTupleProcessed"  # [processedTuple] Before the tuple will be processed. Attributes: Tuple In
 
     def __init__(self, opID: int, socketsIn: int, socketsOut: int,
-                 allowNoneMerge: bool = False, pipelineBreaker: bool = False,
                  staticDataObject: bool = False, supportsDebugging: bool = True):
         super(Operator, self).__init__()
 
-        self.id = opID
+        self.id = opID  # Unique ID reflecting the operator entity in the pipeline
+        self.uuid = uuid.uuid4().hex  # Unique ID reflecting current data parameter configurations
         self.inputs: List[Socket] = list()
         self.outputs: List[Socket] = list()
 
         self._eventLoop: Optional[asyncio.AbstractEventLoop] = None
         self._messageBroker = Operator.MessageBroker(self)
 
-        self.allowNoneMerge = allowNoneMerge  # if false no None values will be passed inside the tuple when combining
-        self.pipelineBreaker = pipelineBreaker  # If this forces the children to be of a separate stream
-        self.staticDataObject = staticDataObject  # If no deep copy of the object should occur in transmit & display
+        self.staticDataObject = staticDataObject  # If no deep copy of the object should occur in transmit
         self._supportDebugging = supportsDebugging  # If this operator does support debugging
 
         self._runtimeCreated = False
+
+        self._currentError: Optional[str] = None
 
         # Setup utils
 
@@ -63,24 +71,39 @@ class Operator(ABC, IEventEmitter):
         self._debugger = None
         self._advisor = None
 
-        if config.MONITORING_ENABLED:
+        if StreamVizzard.getConfig().MONITORING_ENABLED:
             from spe.runtime.monitor.operatorMonitor import OperatorMonitor
             self._monitor = OperatorMonitor(self)
 
-        if config.DEBUGGER_ENABLED:
+        if StreamVizzard.getConfig().ADVISOR_ENABLED:
+            from spe.runtime.advisor.operatorAdvisor import OperatorAdvisor
+            self._advisor = OperatorAdvisor(self)
+
+        if StreamVizzard.getConfig().DEBUGGER_ENABLED:
             from spe.runtime.debugger.operatorDebugger import OperatorDebugger
             self._debugger = OperatorDebugger(self)
 
         # Determine operator type
 
         from spe.pipeline.operators.source import Source
+        from spe.pipeline.operators.sink import Sink
 
         if isinstance(self, Source):
             self._operatorType = OperatorType.SOURCE
+        elif isinstance(self, Sink):
+            self._operatorType = OperatorType.SINK
         else:
             self._operatorType = OperatorType.DEFAULT
 
         self._configureSockets(socketsIn, socketsOut)
+
+    @property
+    def allowedParents(self) -> Optional[List[Type[Operator]]]:
+        return None
+
+    @property
+    def allowedChildren(self) -> Optional[List[Type[Operator]]]:
+        return None
 
     def _configureSockets(self, socketsIn: int, socketsOut: int):
         socketsChanged = socketsIn != len(self.inputs) or socketsOut != len(self.outputs)
@@ -110,14 +133,20 @@ class Operator(ABC, IEventEmitter):
 
         self._messageBroker.setupMessageQueues()
 
-    def onExecutionError(self, error: Optional[str] = None):
+    def onExecutionError(self, error: Optional[str] = None, showErrorLine: bool = False):
         T, V, TB = sys.exc_info()
 
         # Extract error msg from exception if error txt is not set
         if error is None:
+            tb = traceback.extract_tb(TB)
             res = traceback.format_exception_only(T, V)
 
             error = res[len(res) - 1] + "\n".join(res[:len(res) - 1])
+
+            if showErrorLine:
+                error = "[Line " + str(tb[-1].lineno) + "] " + error
+
+        self._currentError = error
 
         # Send error
         if self._monitor is not None:
@@ -127,17 +156,23 @@ class Operator(ABC, IEventEmitter):
         if T is not None:
             logging.log(logging.ERROR, traceback.format_exc())
 
-        # Register exceptions produced during actual execution of the operator for debug
-        if self.isDebuggingEnabled() and getHistoryState() == HistoryState.INACTIVE:
-            ls = self.getDebugger().getLastStep()
-            if ls is not None and ls.type == DebugStepType.ON_OP_EXECUTED:
-                ls.debugTuple.registerAttribute("opExError", error)
+    def clearExecutionError(self):
+        self._updateError(None)
+
+    def _updateError(self, error: Optional[str]):
+        if error is None and self._currentError is not None:
+            if (monitor := self.getMonitor()) is not None:
+                monitor.notifyError(None)  # Notify cleared error
+
+            self._currentError = None
+        elif error is not None:
+            self.onExecutionError(error)
 
     def exportOperatorData(self) -> dict:
         from spe.pipeline.operators.operatorDB import getPathByOperator
 
         def getID(operator: Operator):
-            return {"id": operator.id, "path": getPathByOperator(type(operator))}
+            return {"id": operator.id, "path": getPathByOperator(type(operator)), "uuid": operator.uuid}
 
         # Inputs / Outputs
 
@@ -180,6 +215,15 @@ class Operator(ABC, IEventEmitter):
     def isSource(self):
         return self._operatorType == OperatorType.SOURCE
 
+    def isSink(self):
+        return self._operatorType == OperatorType.SINK
+
+    def getName(self) -> str:
+        return self.__class__.__name__
+
+    def getUniqueName(self) -> str:
+        return self.getName() + "_" + str(self.id)
+
     def getInput(self, socketID) -> Optional[Socket]:
         if socketID >= len(self.inputs):
             return None
@@ -191,6 +235,73 @@ class Operator(ABC, IEventEmitter):
             return None
 
         return self.outputs[socketID]
+
+    def getNeighbours(self, includeInputs: bool = True, includeOutputs: bool = True) -> List[Operator]:
+        # Map from connections to (other) ops
+        cons = self.getConnections(includeInputs, includeOutputs)
+
+        n: List[Operator] = list()
+
+        for c in cons:
+            n.append(c.input.op if c.input.op != self else c.output.op)
+
+        return n
+
+    def getGlobalNeighbours(self, includeInputs: bool = True, includeOutputs: bool = True) -> List[Operator]:
+        """ Returns all IN or OUT neighbours of this operator, globally, not only direct neighbours. """
+
+        ops: List[Operator] = list()
+
+        if includeInputs:
+            visited: Set[int] = set()
+            inNQueue = self.getNeighbours(True, False)
+
+            while inNQueue:
+                n = inNQueue.pop(0)
+
+                if n.id in visited:
+                    continue
+
+                visited.add(n.id)
+                ops.append(n)
+
+                inNQueue.extend(n.getNeighbours(True, False))
+
+        if includeOutputs:
+            visited: Set[int] = set()
+            outNQueue = self.getNeighbours(False, True)
+
+            while outNQueue:
+                n = outNQueue.pop(0)
+
+                if n.id in visited:
+                    continue
+
+                visited.add(n.id)
+                ops.append(n)
+
+                outNQueue.extend(n.getNeighbours(False, True))
+
+        return ops
+
+    def getConnections(self, includeIns: bool = True, includeOuts: bool = True) -> List[Connection]:
+        n: List[Connection] = list()
+
+        # Operator inputs
+
+        if includeIns:
+            for inSock in self.inputs:
+                for con in inSock.getConnections():
+                    n.append(con)
+
+        # Operator outputs
+
+        if includeOuts:
+            for outSock in self.outputs:
+                for con in outSock.getConnections():
+                    n.append(con)
+
+        return n
 
     def hasOutConnections(self) -> bool:
         for out in self.outputs:
@@ -214,59 +325,86 @@ class Operator(ABC, IEventEmitter):
     def getBroker(self):
         return self._messageBroker
 
+    # ---------------------------- COMPILER ----------------------------
+
+    def deriveOutThroughput(self, inTp: float):
+        """ Determines the maximum out throughput that can be achieved by this operator based on the inTp.
+        Operators, such as windows might return values different from the inTp due to collecting values. """
+
+        return inTp  # Regular operators have an 1:1 processing of data
+
+    def getCompileMetaData(self) -> CompileOpMetaData:
+        return CompileOpMetaData()
+
+    def getCompileSpecs(self) -> List[CompileOpSpecs]:
+        if InferExecutionCodeCOF.canAutoInfer(self):
+            return [CompileOpSpecs.getDefaultInferable()]
+        else:
+            return [CompileOpSpecs.getSVDefault()]
+
     # -------------------------- PIPE DEBUGGER -------------------------
 
+    def continueExecution(self):
+        self.getBroker().continueExecution()
+
     def isDebuggingEnabled(self, checkSupported: bool = True):
-        en = self._debugger is not None and isDebuggerEnabled()
+        en = self._debugger is not None and self._debugger.getDebugger().isEnabled()
 
         return en if not checkSupported else en and checkSupported and self.isDebuggingSupported()
 
+    def getHistoryState(self) -> Optional[HistoryState]:
+        if self.isDebuggingEnabled(False):
+            return self._debugger.getDebugger().getHistoryState()
+
+        return None
+
     def isDebuggingSupported(self):
         return self._supportDebugging
-
-    def onHistoryContinuation(self, step: DebugStep):
-        # Executed when the history is continued and
-        # before cont functions of DebugSteps are executed
-        # May be overriden by operators to add custom logic
-        ...
 
     # ---
 
     async def _debugProcessTuple(self, _tuple: Tuple):
         return await self._debugger.registerStep(DebugStepType.PRE_TUPLE_PROCESSED,
                                                  self._debugger.getDT(_tuple),
-                                                 undo=lambda pT, nT: self._eventListener.execute(self.EVENT_TUPLE_PRE_PROCESSED, [pT]),
-                                                 redo=lambda pT, nT: self._eventListener.execute(self.EVENT_TUPLE_PRE_PROCESSED, [nT]),
-                                                 cont=self._onOperatorExecute)
+                                                 undo=lambda tup: self._eventListener.execute(self.EVENT_TUPLE_PRE_PROCESSED, [tup]),
+                                                 redo=lambda tup: self._eventListener.execute(self.EVENT_TUPLE_PRE_PROCESSED, [tup]),
+                                                 cont=StepContinuation(DebugStepType.ON_OP_EXECUTED, self._onOperatorExecute))
 
     async def _debugExecuteOperator(self, _tuple: Tuple):
         resTuple = self.createTuple(())  # Required to have access to result tuple
 
         return await self._debugger.registerStep(DebugStepType.ON_OP_EXECUTED,
                                                  DebugTuple(self._debugger, resTuple),
-                                                 undo=lambda pT, nT: self._undoRedoExecute(True, nT),
-                                                 redo=lambda pT, nT: self._undoRedoExecute(False, nT),
-                                                 cont=lambda rT: self._contExecute(rT))
+                                                 undo=lambda tup: self._undoRedoExecute(True, tup),
+                                                 redo=lambda tup: self._undoRedoExecute(False, tup),
+                                                 cont=StepContinuation(DebugStepType.ON_TUPLE_PROCESSED,
+                                                                       self._contExecute, self._canContExecute))
+
+    def _canContExecute(self, rT: Tuple) -> bool:
+        if not rT.isValidTuple():  # Error or Dropped
+            return False
+
+        exTime = self._debugger.getDT(rT).getAttribute("exTime")
+
+        return exTime is not None  # None=onTupleProcessed was never called with this tuple (ex returned None)
 
     async def _contExecute(self, rT: Tuple):
         exTime = self._debugger.getDT(rT).getAttribute("exTime")
-
-        if exTime is None:  # onTupleProcessed was never called with this tuple (ex returned None)
-            return
 
         await self._onTupleProcessed(rT, exTime)
 
     def _undoRedoExecute(self, undo: bool, tup: Tuple):
         dt = self.getDebugger().getDT(tup)
 
+        # Errors occurring during setData are handled by pipelineUpdates
         err = dt.getAttribute("opExError")
-        if err is not None:
-            self.onExecutionError(err)
 
         if undo:
             self._onExecutionUndo(tup)
+            self._updateError(err["prev"] if err is not None else None)
         else:
             self._onExecutionRedo(tup)
+            self._updateError(err["current"] if err is not None else None)
 
     def _onExecutionUndo(self, tup: Tuple):
         ...  # May be implemented by children to add custom logic
@@ -283,9 +421,12 @@ class Operator(ABC, IEventEmitter):
 
         # Execution time will be accessed as dt attribute in operatorMonitor
         return await self._debugger.registerStep(DebugStepType.ON_TUPLE_PROCESSED, dt,
-                                                 undo=lambda prevT, nT: self._eventListener.execute(self.EVENT_TUPLE_PROCESSED, [prevT, 0]),
-                                                 redo=lambda pT, nextT: self._eventListener.execute(self.EVENT_TUPLE_PROCESSED, [nextT, 0]),
-                                                 cont=self._distributeTuple)
+                                                 undo=lambda tup: self._eventListener.execute(self.EVENT_TUPLE_PROCESSED, [tup, 0]),
+                                                 redo=lambda tup: self._eventListener.execute(self.EVENT_TUPLE_PROCESSED, [tup, 0]),
+                                                 cont=StepContinuation(DebugStepType.ON_TUPLE_TRANSMITTED, self._distributeTuple, self._canContProcessed))
+
+    def _canContProcessed(self, tupleIn: Tuple) -> bool:
+        return self.hasOutConnections() and not tupleIn.isSinkTuple()
 
     def _undoRedoDistribute(self, undo: bool, tup: Tuple):
         for socketID in range(0, len(self.outputs)):
@@ -315,14 +456,25 @@ class Operator(ABC, IEventEmitter):
 
         # For both redo/undo actions the nextDT is required since there are all required data elements stored to redo/undo
         return await self._debugger.registerStep(DebugStepType.ON_TUPLE_TRANSMITTED, self._debugger.getDT(tupleIn),
-                                                 undo=lambda pT, nextTuple: self._undoRedoDistribute(True, nextTuple),
-                                                 redo=lambda pT, nextTuple: self._undoRedoDistribute(False, nextTuple),
+                                                 undo=lambda tup: self._undoRedoDistribute(True, tup),
+                                                 redo=lambda tup: self._undoRedoDistribute(False, tup),
                                                  cont=None)
 
     # ----------------------------------------------------------------
 
     def createTuple(self, data: tuple) -> Tuple:
         return Tuple(data, self)
+
+    def createSinkTuple(self) -> Tuple:
+        return Tuple.createSinkTuple(self)
+
+    def createErrorTuple(self, error: Optional[str] = None) -> Tuple:
+        self.onExecutionError(error)
+
+        return Tuple.createErrorTuple(self)
+
+    def createDroppedTuple(self):
+        return Tuple.createDroppedTuple(self)
 
     def onRuntimeCreate(self, eventLoop: asyncio.AbstractEventLoop):
         self._runtimeCreated = True
@@ -350,7 +502,7 @@ class Operator(ABC, IEventEmitter):
     async def _onOperatorExecute(self, tupleIn: Tuple):
         # Stopped
         if not self.isRunning():
-            return None
+            return
 
         if not self.staticDataObject:
             # Creates a copy of the input data to not impact previous DTs or parallel executions
@@ -358,37 +510,75 @@ class Operator(ABC, IEventEmitter):
             tupleIn = tupleIn.clone(True)
 
             if not self.isRunning():
-                return None
+                return
+
+        prevError = self._currentError
 
         try:
             # Execute real operator task in parallel
             # Care: For CPU heavy tasks a ProcessPoolExecutor would be more suitable
             # However, data share / copy needs to be handled in this case
             # None uses the asyncio default ThreadPoolExecutor (which shares GLI)
-            cpuStartTime = Timer.currentTime()
 
-            tupleNew = await self._eventLoop.run_in_executor(None, self._execute, tupleIn)
+            # Awaiting the result introduces additional overhead that might be higher than short running execute funcs.
+            # However, this overhead is usually in sub-millisecond range (~0.4ms) and can be neglected.
+            # If system is on load, this overhead might be higher.
+            # For this reason we track the pure execution time (which also may be affected by GLI slow-downs).
+
+            if self._monitor is not None and self._monitor.getMonitor().isTrackingStats():
+                tupleNew, elapsed = self._performExecute(tupleIn)  # Analytical mode | Reduces GLI overhead
+            else:
+                tupleNew, elapsed = await self._eventLoop.run_in_executor(None, self._performExecute, tupleIn)
 
             if tupleNew is None:
-                return
-
-            cpuStopTime = Timer.currentTime()
+                tupleNew = self.createDroppedTuple()
 
             if self.isDebuggingEnabled():
                 # Adjust already created result tuple, required to access new data in continuation
                 # For long-running operators, it is important to pin to DT to not reload it from DISK
+                # Care: Continuation might cancel task before long-running op has been completed, which is ok
                 dt = self._getExecuteDT()
-                dt.setTupleData(tupleNew.data, True)
-                tupleNew = dt.getTuple()
 
-            # Care: Long running operators might trigger this debugMethod while history is already traversed
-            await self._onTupleProcessed(tupleNew, cpuStopTime - cpuStartTime)
+                if dt is None:
+                    self.onExecutionError(Messages.DEBUGGER_DT_NOT_AVAILABLE.value)
+
+                    return
+
+                dt.setTupleData(tupleNew.data, True)
+
+                if tupleNew.isErrorTuple():
+                    errData = {"prev": prevError,
+                               "current": self._currentError}
+                    dt.registerAttribute("opExError", errData)
+
+                dtTuple = dt.getTuple()
+                dtTuple.state = tupleNew.state
+                tupleNew = dtTuple
+
+            if not tupleNew.isValidTuple():  # None/Error values are dropped
+                return
+
+            self.clearExecutionError()
+
+            await self._onTupleProcessed(tupleNew, elapsed)
         except Exception:
             self.onExecutionError()
+
+    def _performExecute(self, inputData: Tuple) -> tuple[Optional[Tuple], float]:
+        start = Timer.currentRealTime()
+
+        outputData = self._execute(inputData)
+
+        end = Timer.currentRealTime()
+
+        return outputData, end - start
 
     @debugMethod(_debugOnTupleProcessed)
     async def _onTupleProcessed(self, tupleIn: Tuple, executionTime: float):
         self._eventListener.execute(self.EVENT_TUPLE_PROCESSED, [tupleIn, executionTime])
+
+        if tupleIn.isSinkTuple():
+            return
 
         await self._distributeTuple(tupleIn)
 
@@ -423,7 +613,8 @@ class Operator(ABC, IEventEmitter):
     # ----------------------------------------------------------------
 
     @abstractmethod
-    def setData(self, data: json):
+    def setData(self, data: Dict):
+        # Shouldn't do runtime-specific operations, such as opening files, ... -> use onRuntimeCreate
         # CARE: All parameters need to be present in the dictionary, also optional values!
         ...
 
@@ -496,9 +687,16 @@ class Operator(ABC, IEventEmitter):
 
             self._queueEvent.set()
 
-            onOpMessageQueueChanged(self._operator)
+            self._notifyMessageQueueChanged()
 
         # -------------------------------- DEBUGGER --------------------------------
+
+        def continueExecution(self):
+            # Cancels current process task and starts a new one to purge outdated operations
+
+            self._futureThread.cancel()
+
+            self._futureThread = asyncio.ensure_future(self._processLoop(), loop=self._operator.getEventLoop())
 
         def getMessageCount(self):
             return [len(q) for q in self._messageQueue]
@@ -511,39 +709,50 @@ class Operator(ABC, IEventEmitter):
             if self._totalMessages == 0:
                 self._queueEvent.clear()
 
-            onOpMessageQueueChanged(self._operator)
+            self._notifyMessageQueueChanged()
 
         async def _debugProcessTuple(self, resTuple: Tuple):
             return await self._operator.getDebugger().registerStep(DebugStepType.ON_STREAM_PROCESS_TUPLE,
                                                                    DebugTuple(self._operator.getDebugger(), resTuple),
-                                                                   undo=lambda pT, nT: self._undoProcessElement(nT),
-                                                                   redo=lambda pT, nT: self._createMessageTuple(),
-                                                                   cont=self._operator._processTuple)
+                                                                   undo=lambda tup: self._undoProcessElement(tup),
+                                                                   redo=lambda tup: self._createMessageTuple(),
+                                                                   cont=StepContinuation(DebugStepType.PRE_TUPLE_PROCESSED, self._operator._processTuple))
 
         def _undoProcessElement(self, processedTuple: Tuple):
             for i in range(len(processedTuple.data)):
                 data = processedTuple.data[i]
 
-                # If we have real data or None in case it's not a dummy None added by allowNoneMerge
-                if data is not None or not self._operator.allowNoneMerge:
+                # If we have real data
+                if data is not None:
                     self._messageQueue[i].appendleft(processedTuple.data[i])
 
                     self._totalMessages += 1
 
-            onOpMessageQueueChanged(self._operator)
+            self._notifyMessageQueueChanged()
 
         # --------------------------------------------------------------------------
 
         async def _processLoop(self):
             try:
                 while self._operator.isRunning():
+                    if self._operator.isDebuggingEnabled():
+                        # In case the history is paused, wait for continuation, since undo triggers queueEvent.
+                        # If the loop is canceled during continuation wait before pipeline is resumed.
+
+                        await self._operator.getDebugger().getDebugger().getHistoryEvent().wait()
+
+                    self._queueEvent.clear()
+
                     while self._totalMessages > 0:
+                        if not self._operator.isRunning():
+                            return
+
                         # Check if it is possible to process a tuple
 
                         canProcessTuple = True
                         for qID in range(len(self._operator.inputs)):
                             q = self._messageQueue[qID]
-                            if len(q) == 0 and not self._operator.allowNoneMerge:
+                            if len(q) == 0:
                                 canProcessTuple = False
 
                                 break
@@ -558,14 +767,8 @@ class Operator(ABC, IEventEmitter):
                     if not self._operator.isRunning():  # Closed
                         return
 
-                    self._queueEvent.clear()
-
                     await self._queueEvent.wait()
 
-                    if self._operator.isDebuggingEnabled():
-                        # In case the history is paused, wait for continuation.
-                        # This is crucial since redo receive tuple sets queueEvent and triggers processing.
-                        await self._operator.getDebugger().getDebugger().getHistoryAsyncioEvent().wait()
             except Exception:
                 logging.log(logging.ERROR, traceback.format_exc())
 
@@ -592,14 +795,16 @@ class Operator(ABC, IEventEmitter):
                     messageElements.append(q.popleft())
 
                     self._totalMessages -= 1
-                elif self._operator.allowNoneMerge:
-                    messageElements.append(None)
                 else:
                     raise Exception("No elements in message queue for op " + str(self._operator.id) + " and socket " + str(qID) + "!")
 
-            onOpMessageQueueChanged(self._operator)
+            self._notifyMessageQueueChanged()
 
             return tuple(messageElements)
+
+        def _notifyMessageQueueChanged(self):
+            if self._operator.getMonitor() is not None:
+                self._operator.getMonitor().getMonitor().onOpMessageQueueChanged(self._operator)
 
         # --------------------------------------------------------------------------
 

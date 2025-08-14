@@ -1,3 +1,4 @@
+from __future__ import annotations
 import asyncio
 import gc
 import logging
@@ -6,14 +7,18 @@ import traceback
 from contextlib import nullcontext
 from enum import Enum
 from threading import Thread
-from typing import Optional, List
+from typing import Optional, List, Callable, TYPE_CHECKING
 
-import config
 from spe.pipeline.pipeline import Pipeline
 from spe.pipeline.pipelineUpdates import PipelineUpdate
-from spe.runtime.runtimeCommunicator import RuntimeCommunicator
-from spe.runtime.structures.timer import Timer
+from spe.runtime.runtimeGateway import RuntimeGateway
+from spe.common.timer import Timer
+from streamVizzard import StreamVizzard
+from utils.svResult import SvResult
 from utils.utils import isWindowsOS
+
+if TYPE_CHECKING:
+    from network.server import ServerManager
 
 if isWindowsOS():
     import wres
@@ -27,70 +32,86 @@ class RuntimeState(Enum):
 
 
 class RuntimeManager:
-    def __init__(self, serverManager):
+    def __init__(self, serverManager: ServerManager):
         self._pipeline: Optional[Pipeline] = None
 
         self.thread: Optional[Thread] = None
         self.asyncioLoop: Optional[asyncio.AbstractEventLoop] = None
 
-        self.shutdownEvent: Optional[threading.Event] = None
+        self._startupEvent: Optional[threading.Event] = None
+        self._shutdownEvent: Optional[threading.Event] = None
 
         self.state = RuntimeState.NONE
 
         self._serverManager = serverManager
 
-        self._runtimeCommunicator = RuntimeCommunicator(self._serverManager, self)
+        self._gateway = RuntimeGateway(self._serverManager, self)
 
-    def _startApp(self):
-        print("\nStarting Pipeline...")
-
-        logging.basicConfig(level=logging.INFO)
-
-        self._pipeline.createRuntime(self.asyncioLoop)
-
-        self.state = RuntimeState.RUNNING
-
-    def _runtimeThreadFunc(self):
-        self.asyncioLoop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.asyncioLoop)
-
-        self._startApp()
-
-        self._runtimeCommunicator.onPipelineStarted()
-
-        try:
-            # Second sets system clock to max res if on Windows (will be reset after) - required for accurate time events 10000
-            with wres.set_resolution(0) if isWindowsOS() else nullcontext():
-                self.asyncioLoop.run_forever()
-        except Exception as e:
-            print(e)
-        finally:
-            self._shutdownApp()
-
-    def startPipeline(self, pipeline: Pipeline):
+    def startPipeline(self, pipeline: Pipeline, preStartCallback: Optional[Callable] = None) -> SvResult:
         if self.state is not RuntimeState.NONE:
-            return
+            return SvResult.error("Pipeline already running!")
 
-        if config.MISC_PRINT_PIPELINE_ON_START:
+        if StreamVizzard.getConfig().MISC_PRINT_PIPELINE_ON_START:
             pipeline.describe()
 
-        self.shutdownEvent = threading.Event()
+        self._startupEvent = threading.Event()
+        self._shutdownEvent = threading.Event()
 
         self.state = RuntimeState.STARTING
 
         Timer.reset()
 
         self._pipeline = pipeline
+        self.asyncioLoop = asyncio.new_event_loop()
 
-        self.thread = threading.Thread(target=self._runtimeThreadFunc, daemon=True)
+        self._gateway.onPipelineStarting()
+
+        if preStartCallback is not None:
+            preStartCallback()
+
+        self.thread = threading.Thread(target=self._pipelineRuntimeThread, daemon=True)
         self.thread.start()
 
-        self._runtimeCommunicator.onPipelineStarting()
+        self._startupEvent.wait()  # Wait until pipeline is started
 
-    async def _stopEventLoop(self):
-        self.asyncioLoop.stop()
+        return SvResult.ok() if self.isRunning() else SvResult.error("Pipeline failed to start!")
 
-    def _shutdownApp(self):
+    def _pipelineRuntimeThread(self):
+        asyncio.set_event_loop(self.asyncioLoop)
+
+        print("\nStarting Pipeline...")
+
+        if self._pipeline.createRuntime(self.asyncioLoop):
+            self.state = RuntimeState.RUNNING
+
+            self._gateway.onPipelineStarted()
+        else:
+            self._serverManager.flushSocketData()  # Flush errors before resetting
+
+            self._stopPipeline()
+
+        self._startupEvent.set()
+
+        try:
+            # Run loop until cancellation
+
+            if self.isRunning():
+
+                # Second sets system clock to max res if on Windows (will be reset after) - required for accurate time events 10000
+                with wres.set_resolution(0) if isWindowsOS() else nullcontext():
+                    self.asyncioLoop.run_forever()
+
+            # Run loop until all shutdown clean up is done
+
+            else:
+                tasks = [t for t in asyncio.all_tasks(self.asyncioLoop)]
+                self.asyncioLoop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+        except Exception:
+            logging.log(logging.ERROR, traceback.format_exc())
+        finally:
+            self._shutdownPipelineRuntime()
+
+    def _shutdownPipelineRuntime(self):
         self.asyncioLoop.close()
 
         self.asyncioLoop = None
@@ -99,15 +120,21 @@ class RuntimeManager:
 
         self.state = RuntimeState.NONE
 
-        self._runtimeCommunicator.onPipelineStopped()
+        self._gateway.onPipelineStopped()
 
         self._pipeline = None
 
         gc.collect()
 
-        self.shutdownEvent.set()
+        self._shutdownEvent.set()
 
         print("Pipeline shutdown")
+
+    def updatePipeline(self, updates: List[PipelineUpdate]):
+        if not self.isRunning():
+            return
+
+        asyncio.run_coroutine_threadsafe(self._updatePipelineInternal(updates), loop=self.asyncioLoop)
 
     async def _updatePipelineInternal(self, updates: List[PipelineUpdate]):
         try:
@@ -120,39 +147,11 @@ class RuntimeManager:
         except Exception:
             logging.log(logging.ERROR, traceback.format_exc())
 
-    def updatePipeline(self, updates: List[PipelineUpdate]):
-        if not self.isRunning():
-            return
+    def stopPipeline(self):
+        self._stopPipeline()
 
-        asyncio.run_coroutine_threadsafe(self._updatePipelineInternal(updates), loop=self.asyncioLoop)
-
-    def changeHeatmap(self, hmType):
-        self._runtimeCommunicator.changeHeatmap(hmType)
-
-    def changeDebuggerStep(self, targetStep: int, targetBranch: int):
-        if not self.isRunning():
-            return
-
-        self._runtimeCommunicator.changeDebuggerStep(targetStep, targetBranch)
-
-    def requestDebuggerStep(self, targetBranch: int, targetTime: float):
-        if not self.isRunning():
-            return
-
-        self._runtimeCommunicator.requestDebuggerStep(targetBranch, targetTime)
-
-    def changeDebuggerState(self, historyActive: bool, historyRwd: Optional[int]):
-        if not self.isRunning():
-            return
-
-        self._runtimeCommunicator.changeDebuggerState(historyActive, historyRwd)
-
-    def changeDebuggerConfig(self, enabled: bool, memoryLimit: Optional[int], storageLimit: Optional[int],
-                             historyRewindSpeed: float, historyRwdUseStepTime: bool):
-        self._runtimeCommunicator.changeDebuggerConfig(enabled, memoryLimit, storageLimit, historyRewindSpeed, historyRwdUseStepTime)
-
-    def toggleAdvisor(self, enabled: bool):
-        self._runtimeCommunicator.toggleAdvisor(enabled)
+        if self._shutdownEvent is not None:  # There might be no pipeline running
+            self._shutdownEvent.wait()
 
     def _stopPipeline(self):
         if self.state is RuntimeState.NONE \
@@ -161,21 +160,24 @@ class RuntimeManager:
 
         self.state = RuntimeState.STOPPING
 
-        self._runtimeCommunicator.onPipelineStopping()
+        self._gateway.onPipelineStopping()
 
         self._pipeline.shutdown()
 
-        # Gracefully shutdown event loop
+        # Gracefully schedule all tasks for shutdown and close loop
 
         for task in asyncio.all_tasks(self.asyncioLoop):
             task.cancel()
 
         asyncio.run_coroutine_threadsafe(self._stopEventLoop(), loop=self.asyncioLoop)
 
-    def shutdown(self):
-        self._stopPipeline()
+    async def _stopEventLoop(self):
+        self.asyncioLoop.stop()
 
-        self.shutdownEvent.wait()
+    def shutdown(self):
+        self.stopPipeline()  # Waits until the pipeline is stopped
+
+        self._gateway.onRuntimeShutdown()
 
     def isRunning(self) -> bool:
         return self.state == RuntimeState.RUNNING
@@ -185,3 +187,7 @@ class RuntimeManager:
 
     def getEventLoop(self) -> asyncio.AbstractEventLoop:
         return self.asyncioLoop
+
+    @property
+    def gateway(self) -> RuntimeGateway:
+        return self._gateway

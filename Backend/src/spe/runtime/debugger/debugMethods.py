@@ -1,10 +1,10 @@
 import functools
-from typing import Callable, Awaitable, Optional
+from typing import Callable, Awaitable
 
-from spe.runtime.debugger.debugStep import DebugStep
+from utils.messages import Messages
 
 
-def debugMethod(dm: Callable[..., Awaitable[Optional[DebugStep]]]):
+def debugMethod(dm: Callable[..., Awaitable[bool]]):
     def decorator(function):
         @functools.wraps(function)
         async def wrapper(*args, **kwargs):
@@ -12,15 +12,19 @@ def debugMethod(dm: Callable[..., Awaitable[Optional[DebugStep]]]):
 
             if operator.__class__.__name__ == "MessageBroker":
                 operator = operator._operator
+
             # Execute debug function
             if operator.isDebuggingEnabled(False):
                 if operator.isDebuggingSupported():
-                    res = await dm(*args, **kwargs)  # Returns continuation step if pipeline is continued
+                    execute = await dm(*args, **kwargs)  # Returns true if pipeline is continued
 
-                    if res is not None:
-                        return res  # Continuation, no execution of original method
+                    if not execute:
+                        return None  # Continuation, no execution of original method
                 else:
-                    operator.onExecutionError("Operator does not support debugging!")
+                    operator.onExecutionError(Messages.DEBUGGER_OP_NOT_SUPPORTED.value)
+
+            if not operator.isRunning():
+                return None
 
             # Execute original function
             result = await function(*args, **kwargs)

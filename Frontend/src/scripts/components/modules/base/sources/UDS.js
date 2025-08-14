@@ -7,12 +7,12 @@ import {NumControl} from "@/scripts/components/modules/base/controls/NumberCtrl"
 
 export default class _UDS extends Component {
     constructor(pathIdentifier){
-        super("UDS", "UDS", pathIdentifier, true);
+        super("UDS", "User Defined Source", pathIdentifier, true);
     }
 
     builder(node) {
-        node.outCount = new NumControl(node, "outCount", false, 1, "Outputs", "", 1);
-        node.code = new CodeControl(node, 'code', false, "class UserDefinedSource:\n" +
+        node.outCount = new NumControl(node, "outputs", false, 1, "Outputs", "", 1);
+        node.code = new CodeControl(node, 'code', false, CodeControl.CodeType.UDO, "class UserDefinedSource:\n" +
             "    def onStart(self):\n" +
             "        ...\n\n" +
             "    def runLoop(self) -> tuple:\n" +
@@ -35,16 +35,8 @@ export default class _UDS extends Component {
         super.onControlValueChanged(ctrl, node, oldVal);
     }
 
-    getData(node) {
-        return {
-            code: node.code.getValue(),
-            outputs: node.outCount.getValue()
-        }
-    }
-
     async setData(node, data) {
-        node.code.setValue(data.code);
-        node.outCount.setValue(data.outputs);
+        await super.setData(node, data);
 
         await this.updateSockets(node, 0, node.outCount.getValue(), anySocket, anySocket).then();
     }

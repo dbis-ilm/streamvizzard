@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import json
 from collections import deque
-from typing import TYPE_CHECKING, Optional, Dict, List, Set, Deque, Callable
+from typing import TYPE_CHECKING, Optional, Dict, List, Set, Deque, Callable, Tuple
 
 from spe.runtime.debugger.debugStep import DebugStep, DebugStepType
 from spe.runtime.debugger.history.historyState import HistoryState
 from spe.runtime.debugger.history.pipelineHistoryBranch import PipelineHistoryBranch
-from spe.runtime.runtimeCommunicator import getRuntimeManager
+from spe.common.timer import Timer
 from utils.utils import clamp, printWarning
 
 if TYPE_CHECKING:
@@ -112,8 +112,10 @@ class PipelineHistory:
     def onHistoryActivated(self):
         self._historyState = HistoryState.ACTIVE
 
-    def onHistoryDeactivated(self):
+    def onHistoryDeactivated(self) -> bool:
         # If we continue the history from a different position than the last we need to create a new branch
+
+        splitHistory = False
 
         if self._currentBranch.getStepCount() > 0 and self._currentStepID != self._currentBranch.getLastStep().localID:
             splitStepID = self._currentStepID
@@ -122,20 +124,17 @@ class PipelineHistory:
             self._currentBranch = self._createBranchSplit()
             self._currentStepID = 0
 
+            splitHistory = True
+
             self._debugger.getServerManager().sendSocketData(json.dumps({"cmd": "debSplit",
                                                                          "branchID": self._currentBranch.id,
                                                                          "parentID": self._currentBranch.parentBranch.id,
                                                                          "splitTime": splitStep.time,
                                                                          "splitStep": splitStepID}))
 
-        # Notify operators
-
-        pipeline = getRuntimeManager().getPipeline()
-
-        for op in pipeline.getAllOperators():
-            op.getDebugger().continueHistory()
-
         self._historyState = HistoryState.INACTIVE
+
+        return splitHistory
 
     # ----------------------- GETTER -----------------------
 
@@ -197,44 +196,39 @@ class PipelineHistory:
         return foundSteps
 
     def findLastStepOfTypes(self, opID: int, stepTypes: List[DebugStepType], searchParents: bool = True,
-                            startStep: Optional[int] = None) -> Dict[DebugStepType, DebugStep]:
+                            startStep: Optional[int] = None) -> Tuple[Dict[DebugStepType, DebugStep], Optional[DebugStep]]:
         foundSteps: Dict[DebugStepType, DebugStep] = dict()
         openSteps: Set[DebugStepType] = set(stepTypes)
 
         currentBranch = self._currentBranch
         currentStepID = self._currentStepID if startStep is None else startStep  # If no start step provided take current
 
+        lastStepForOp: Optional[DebugStep] = None
+
         while True:
             if currentBranch.getStepCount() > 0:
-                for sID in range(currentStepID, -1, -1):
+                for sID in range(currentStepID, currentBranch.getFirstStep().localID - 1, -1):
                     s = currentBranch.getStep(sID)
 
-                    if s.debugger.getOperator().id == opID and s.type in openSteps:
-                        foundSteps[s.type] = s
-                        openSteps.remove(s.type)
+                    if s.debugger.getOperator().id == opID:
+                        if lastStepForOp is None:
+                            lastStepForOp = s
 
-                        if len(openSteps) == 0:
-                            return foundSteps
+                        if s.type in openSteps:
+                            foundSteps[s.type] = s
+                            openSteps.remove(s.type)
+
+                            if len(openSteps) == 0:
+                                return foundSteps, lastStepForOp
 
             if currentBranch.parentBranch is None or not searchParents:
-                return foundSteps
+                return foundSteps, lastStepForOp
 
             currentStepID = currentBranch.parentBranch.getSplitStepIDForChild(currentBranch)
             currentBranch = currentBranch.parentBranch
 
             if currentStepID is None:
-                return foundSteps
-
-    def getHistoryStartTime(self) -> float:
-        if self._rootBranch is None:
-            return 0
-
-        firstStep = self._rootBranch.getFirstStep()
-
-        if firstStep is None:
-            return 0
-
-        return firstStep.time
+                return foundSteps, lastStepForOp
 
     def getHistoryState(self) -> HistoryState:
         return self._historyState
@@ -249,7 +243,7 @@ class PipelineHistory:
         return self._currentBranch.getLastStep() if self._currentBranch is not None else None
 
     def getCurrentStep(self) -> Optional[DebugStep]:
-        return self._currentBranch.getStep(self._currentStepID)
+        return self._currentBranch.getStep(self._currentStepID) if self._currentBranch is not None else None
 
     def getCurrentStepID(self):
         # In very rare cases current ID might be -1 for a short amount of time to signal,
@@ -312,12 +306,19 @@ class PipelineHistory:
             for i in range(self._currentStepID, stepV, -1):
                 step = self._currentBranch.getStep(i)
 
-                step.executeUndo(step.prevDebugTuple.getTuple() if step.prevDebugTuple is not None else None,
-                                 step.debugTuple.getTuple())
+                step.executeUndo(step.debugTuple.getTuple())
 
-                self._currentStepID = i - 1
+                self._currentStepID = i - 1  # Might reach -1 temporarily if switching branches
 
-                step.debugger.onTraversal(self._currentBranch.getStep(self._currentStepID))  # Update current active step in op debugger
+                activeStep = self._currentBranch.getStep(self._currentStepID)
+
+                # New active step in history might no longer belong to current step debugger (updated on continue)
+                step.debugger.onTraversal(step, True, None)
+
+                if activeStep is not None:
+                    activeStep.debugger.onTraversal(None, True, activeStep)
+
+                    Timer.setTime(activeStep.time)  # Update time after undo to have correct, prev time
 
         elif self._currentStepID < stepID:
             self._historyState = HistoryState.TRAVERSING_FORWARD
@@ -326,12 +327,13 @@ class PipelineHistory:
             for i in range(self._currentStepID + 1, stepV + 1, 1):
                 step = self._currentBranch.getStep(i)
 
-                step.executeRedo(step.prevDebugTuple.getTuple() if step.prevDebugTuple is not None else None,
-                                 step.debugTuple.getTuple())
+                Timer.setTime(step.time)  # Update time before redo to have correct, new time
+
+                step.executeRedo(step.debugTuple.getTuple())
 
                 self._currentStepID = i
 
-                step.debugger.onTraversal(step)  # Update current active step in op debugger
+                step.debugger.onTraversal(step, False, step)  # Update current active step in op debugger
 
         self._currentStepID = stepV
         self._historyState = HistoryState.ACTIVE

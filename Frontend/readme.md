@@ -1,10 +1,8 @@
-# Webinterface of StreamVizzard
+# StreamVizzard Frontend
 
-# Requirements
+## Manual Installation
 
-node.js with npm 8.1.0
-
-# Installation
+Requires: npm >=9.1.3
 
 ```
 npm install

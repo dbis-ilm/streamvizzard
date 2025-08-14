@@ -2,21 +2,25 @@ import json
 from typing import Optional, List
 
 from spe.pipeline.operators.base.dataTypes.window import Window
-from spe.pipeline.operators.operator import Operator
+from spe.pipeline.operators.base.operators.windows.windowOperator import WindowOperator
+from spe.runtime.compiler.definitions.compileDefinitions import CompileFramework, CompileLanguage, CompileComputeMode, \
+    CompileParallelism
+from spe.runtime.compiler.definitions.compileOpFunction import CodeTemplateCOF
+from spe.runtime.compiler.definitions.compileOpSpecs import CompileOpSpecs
 from spe.runtime.debugger.debuggingUtils import retrieveStoredDTRef
-from spe.runtime.structures.tuple import Tuple
+from spe.common.tuple import Tuple
 
 
-class TumblingWindowCount(Operator):
+class TumblingWindowCount(WindowOperator):
     def __init__(self, opID: int):
-        super(TumblingWindowCount, self).__init__(opID, 1, 1, pipelineBreaker=True)
+        super(TumblingWindowCount, self).__init__(opID, 1, 1)
 
         self.value = 0
 
         self.buffer: List[Tuple] = list()
 
     def setData(self, data: json):
-        self.value = float(data["value"])
+        self.value = int(data["value"])
 
     def getData(self) -> dict:
         return {"value": self.value}
@@ -62,3 +66,28 @@ class TumblingWindowCount(Operator):
 
         else:  # Tuple to redo completed the buffer
             self.buffer.clear()
+
+    # -------------------------- Compilation -------------------------
+
+    def deriveOutThroughput(self, inTp: float):
+        return inTp / self.value
+
+    def getCompileSpecs(self) -> List[CompileOpSpecs]:
+        # window_all for non-keyed streams, window else
+        def getPyFlinkCode(compileConfig):
+            from spe.runtime.compiler.codegeneration.frameworks.pyFlink.pyFlinkCodeTemplate import PyFlinkCodeTemplate
+
+            pyFlinkCode = PyFlinkCodeTemplate({
+                PyFlinkCodeTemplate.Section.IMPORTS: """
+            from pyflink.datastream.window import CountTumblingWindowAssigner""",
+                PyFlinkCodeTemplate.Section.ASSIGNMENTS: f"""
+            $inDS.window_all(CountTumblingWindowAssigner.of({self.value}))"""})  # Currently only for non-keyed streams
+
+            return pyFlinkCode
+
+        return [CompileOpSpecs.getSVDefault(),
+                CompileOpSpecs([CompileFramework.PYFLINK],
+                               [CompileLanguage.PYTHON],
+                               [CompileComputeMode.CPU],
+                               CompileParallelism.all(),
+                               compileFunction=CodeTemplateCOF(CodeTemplateCOF.Type.WINDOW, getPyFlinkCode))]

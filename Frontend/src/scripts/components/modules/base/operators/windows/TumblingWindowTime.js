@@ -5,7 +5,7 @@ import {NumControl} from "@/scripts/components/modules/base/controls/NumberCtrl"
 
 export default class _TumblingWindowTime extends Component {
     constructor(pathIdentifier){
-        super("TumblingWindowTime", "Tumb. Window T", pathIdentifier);
+        super("TumblingWindowTime", "Tumb. Window Time", pathIdentifier);
     }
 
     builder(node) {
@@ -17,15 +17,5 @@ export default class _TumblingWindowTime extends Component {
             [{name: "Any", socket: anySocket}],
             [{name: "Window", socket: anySocket}], //TODO: DATATYPE FOR ARRAY?
             [node.value]);
-    }
-
-    getData(node) {
-        return {
-            value: node.value.getValue()
-        }
-    }
-
-    setData(node, data) {
-        node.value.setValue(data.value);
     }
 }

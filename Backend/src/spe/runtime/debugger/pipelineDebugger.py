@@ -3,19 +3,19 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
-from typing import TYPE_CHECKING, Optional
+from asyncio import CancelledError
+from typing import TYPE_CHECKING, Optional, Dict
 
-import config
 from network.socketTuple import GenericGetterSocketTuple, DebugStepGetterSocketTuple, HistoryBranchUpdateSocketTuple
 from spe.runtime.debugger.bufferManager.historyBufferManager import HistoryBufferManager
-from spe.runtime.debugger.debugBreakpoint import DebugBreakpoint
 from spe.runtime.debugger.history.historyRewinder import HistoryRewinder
 from spe.runtime.debugger.history.historyState import HistoryState
 from spe.runtime.debugger.history.pipelineHistory import PipelineHistory
 from spe.runtime.debugger.history.pipelineHistoryBranch import PipelineHistoryBranch
 from spe.runtime.debugger.pipelineUpdateHandler import PipelineUpdateHandler
-from spe.runtime.runtimeCommunicator import getPipelineMonitor
-from spe.runtime.structures.timer import Timer
+from spe.common.runtimeService import RuntimeService
+from spe.common.timer import Timer
+from streamVizzard import StreamVizzard
 
 if TYPE_CHECKING:
     from network.server import ServerManager
@@ -23,20 +23,20 @@ if TYPE_CHECKING:
     from spe.runtime.debugger.debugStep import DebugStep
 
 
-class PipelineDebugger:
+class PipelineDebugger(RuntimeService):
     # It is important to synchronize the registerStep and changeDebugger function to
     # assure that the different threads to not interfere with each other
 
     def __init__(self, runtimeManager: RuntimeManager, serverManager: ServerManager):
-        self._runtimeManager = runtimeManager
-        self._serverManager = serverManager
+        super().__init__(runtimeManager, serverManager)
 
-        self._enabled = True
+        self._enabled = False
 
         # Reentrant Lock may be acquired multiple times by same thread (nested functions)
         self._historyLock = threading.RLock()
 
-        self._historyAsyncioEvent: Optional[asyncio.Event] = None
+        self._historyEvent: Optional[asyncio.Event] = None
+        self._historyEventLock: Optional[asyncio.Lock] = None
 
         self._currentGSSocketTuple: Optional[GenericGetterSocketTuple] = None
         self._currentHESocketTuple: Optional[DebugStepGetterSocketTuple] = None
@@ -51,60 +51,71 @@ class PipelineDebugger:
         self._pipelineUpdateHandler = PipelineUpdateHandler(self)
 
         self._provenanceInspector = None
-        if config.DEBUGGER_PROV_INSPECTOR_ENABLED:
+        if StreamVizzard.getConfig().DEBUGGER_PROV_INSPECTOR_ENABLED:
             from spe.runtime.debugger.provenance.provenanceInspector import ProvenanceInspector
 
             self._provenanceInspector = ProvenanceInspector(self)
 
     # ----------------------------- INTERFACE -----------------------------
 
-    def startUp(self):
+    def onPipelineStarting(self):
+        # Return if debugger is not enabled or already initialized
+        if not self._enabled or self._historyEvent is not None:
+            return
+
         self._pipelineHistory.initialize()
         self._historyBufferManager.initialize()
 
         if self._provenanceInspector is not None:
             self._provenanceInspector.initialize()
 
-        self._historyAsyncioEvent = asyncio.Event()
-        self._runtimeManager.getEventLoop().call_soon_threadsafe(self._historyAsyncioEvent.set)
+        self._historyEvent = asyncio.Event()
+        self._historyEventLock = asyncio.Lock()
+        self.runtimeManager.getEventLoop().call_soon_threadsafe(self._historyEvent.set)
 
-        self._pipelineUpdateHandler.start(self._runtimeManager.getPipeline())
+        self._pipelineUpdateHandler.start(self.runtimeManager.getPipeline())
 
-    def shutdown(self):
-        if self._historyAsyncioEvent is not None:
+    def onPipelineStopping(self):
+        # When the pipeline is ordered to shut down
+
+        if self._historyEvent is not None:
             # Stop pipeline execution immediately
-            self._runtimeManager.getEventLoop().call_soon_threadsafe(self._historyAsyncioEvent.clear)
+            self.runtimeManager.getEventLoop().call_soon_threadsafe(self._historyEvent.clear)
+
+        self._historyRewinder.reset()
 
         # When the pipeline is ordered to stop
         self._pipelineHistory.shutdown()
 
-        self._historyRewinder.reset()  # First reset/stop rewinder in case it's still running!
-
         if self._provenanceInspector is not None:
             self._provenanceInspector.shutdown()
 
-    def close(self):
+    def onPipelineStopped(self):
         # When the pipeline has been stopped completely
-        self._historyAsyncioEvent = None
+        self._historyEvent = None
 
         self.reset(True)
 
     def reset(self, close: bool = False):
         # Reset operator data, mainly important if debugger is activated/deactivated during execution
-        for op in self._runtimeManager.getPipeline().getAllOperators():
+        for op in self.runtimeManager.getPipeline().getAllOperators():
             op.getDebugger().reset(close)
+
+        self._historyRewinder.reset()
+
+        if self._provenanceInspector is not None:
+            self._provenanceInspector.reset()
 
         self._pipelineHistory.reset()
         self._historyBufferManager.reset()
 
         self._pipelineUpdateHandler.reset()
 
-        if self._provenanceInspector is not None:
-            self._provenanceInspector.reset()
-
         self._currentGSSocketTuple = None
         self._currentHESocketTuple = None
         self._currentHGUSocketTuple = None
+
+        self._enabled = False
 
     def registerGlobalStep(self, step: DebugStep) -> int:
         with self._historyLock:
@@ -112,19 +123,19 @@ class PipelineDebugger:
 
             self._historyBufferManager.registerStep(step)
 
-            self._pipelineUpdateHandler.onDebugStepRegistered(step)
+            self._pipelineUpdateHandler.onDebugStepRegistered(step)  # This enriches the steps with update information
 
             if self._provenanceInspector is not None:
                 self._provenanceInspector.onDebugStepRegistered(step)
 
-            self.sendStepData()
+            self._sendStepData()
 
             return stepID
 
     def onDebugStepExecuted(self, step: DebugStep, undo: bool):
         if self._currentHESocketTuple is None:
             self._currentHESocketTuple = DebugStepGetterSocketTuple(self._getCurrentHESocketData, self._onHESocketDataSent, step, undo)
-            self._serverManager.sendSocketData(self._currentHESocketTuple)
+            self.serverManager.sendSocketData(self._currentHESocketTuple)
         else:
             self._currentHESocketTuple.step = step
             self._currentHESocketTuple.undo = undo
@@ -137,45 +148,46 @@ class PipelineDebugger:
 
         if ds.hasUpdates():
             self._currentHESocketTuple = None
-            getPipelineMonitor().flushMonitorData()
+
+            monitor = self.runtimeManager.gateway.getMonitor()
+
+            if monitor is not None:
+                monitor.flushMonitorData()
 
     def changeDebuggerStep(self, targetStep: int, targetBranch: int):
-        if not self._pipelineHistory.getHistoryState().isActive():
+        if not self.isPipelineRunning():
             return
+
+        self._historyRewinder.reset()
 
         self.setHistoryStep(targetStep, targetBranch)
 
-    def requestDebuggerStep(self, targetBranch: int, targetTime: Optional[float]):
-        if not self._pipelineHistory.getHistoryState().isActive():
-            return
+    def requestDebuggerStep(self, targetBranch: int, targetTime: Optional[float]) -> Optional[Dict]:
+        if not self.isPipelineRunning() or not self._pipelineHistory.getHistoryState().isActive():
+            return None
 
         stp = self._pipelineHistory.findClosestStepForTime(targetBranch, targetTime)
 
-        self.getServerManager().sendSocketData(json.dumps({"cmd": "debReqStep",
-                                                           "stepID": stp.localID if stp is not None else 0,
-                                                           "branchID": stp.branchID}))
+        return {"stepID": stp.localID if stp is not None else 0, "branchID": stp.branchID}
 
     def changeDebuggerState(self, historyActive: bool, historyRewind: Optional[int]):
+        if not self.isPipelineRunning():
+            return
 
-        # If rewind is manually canceled or the history is resumed or the debugger is disabled we need to stop rewind
-        rewindActive = (historyRewind is not None) and self._enabled and historyActive
-
-        if self._historyRewinder.updateStatus(rewindActive, historyRewind == 1):
-            return  # If rewinder already running we need to return since history is locked
+        self._historyRewinder.reset()  # Cancel old rewind
 
         if historyActive:
-            if self._historyAsyncioEvent.is_set():
-                self._activateHistory()
+            self._activateHistory(False)
 
-            # Execute rewinder if enabled, this will lock history and prevent manual modifications
-            # if self._historyRewinder.startMaybe():
-            #     return
+            if historyRewind is not None:
+                self._historyRewinder.start(historyRewind == 1)
 
-        elif self._historyAsyncioEvent is not None and not self._historyAsyncioEvent.is_set():
+        else:
             self._deactivateHistory()
 
     def changeDebuggerConfig(self, enabled: bool, memoryLimit: Optional[int], storageLimit: Optional[int],
-                             historyRewindSpeed: float, historyRewindUseStepTime: bool):
+                             historyRewindSpeed: float, historyRewindUseStepTime: bool, provenanceEnabled: bool,
+                             provenanceAwaitUpdates: bool):
         self._historyBufferManager.changeMemoryLimit(memoryLimit, storageLimit)
 
         self._historyRewinder.setSpeed(historyRewindSpeed, historyRewindUseStepTime)
@@ -183,22 +195,42 @@ class PipelineDebugger:
         if not enabled:
             self._historyRewinder.reset()
 
-        with self._historyLock:
-            self._enabled = enabled
+        if self._provenanceInspector is not None:
+            self._provenanceInspector.changeConfig(provenanceAwaitUpdates)
 
-            if not self.isEnabled():
-                self.shutdown()
+            if not enabled:
+                self._provenanceInspector.reset()
+            else:
+                if provenanceEnabled:
+                    self._provenanceInspector.enable()
+                else:
+                    self._provenanceInspector.disable()
+
+        prevEnabled = self._enabled
+        self._enabled = enabled
+
+        if prevEnabled and not enabled:
+            with self._historyLock:
+                self.onPipelineStopping()
                 self.reset()
 
-                return
+                # Continue regular pipeline execution
+                self.runtimeManager.getEventLoop().call_soon_threadsafe(self._historyEvent.set)
+        elif not prevEnabled and enabled:
+            # Re-Initialize debugger
+            self.onPipelineStarting()
+
+    def executeProvenanceQuery(self, queryData: Dict):
+        if self._provenanceInspector is not None and self._provenanceInspector:
+            self._provenanceInspector.queryFromTemplate(queryData)
 
     # ---------------------------- GLOBAL STEP ----------------------------
 
-    def sendStepData(self):
+    def _sendStepData(self):
         if self._currentGSSocketTuple is None:
             self._currentGSSocketTuple = GenericGetterSocketTuple(self._getCurrentGSSocketData,
                                                                   self._onGSSocketDataSent)
-            self._serverManager.sendSocketData(self._currentGSSocketTuple)
+            self.serverManager.sendSocketData(self._currentGSSocketTuple)
 
     def _getCurrentGSSocketData(self):
         ls = self._pipelineHistory.getLastStepForCurrentBranch()
@@ -206,18 +238,20 @@ class PipelineDebugger:
 
         currentBranch = self._pipelineHistory.getBranch(self._pipelineHistory.getCurrentBranchID())
 
-        if currentBranch is None:  # Closed
+        cs = self._pipelineHistory.getCurrentStep()
+
+        if currentBranch is None:  # Closed TODO: BETTER SOLUTION FOR DETECTING IF STATE SHOULD BE SENT!
             return None
 
         return json.dumps({"cmd": "debuggerData",
                            "active": self._pipelineHistory.getHistoryState().isActive(),
                            "maxSteps": self._pipelineHistory.getMaxStepsForCurrentBranch(),
-                           "stepID": self._pipelineHistory.getCurrentStepID(),
+                           "stepID": cs.localID,
                            "branchID": currentBranch.id,
+                           "stepTime": cs.time,
                            "branchStepOffset": currentBranch.stepIDOffset,
                            "memSize": self._historyBufferManager.getMainMemorySize(),
                            "diskSize": self._historyBufferManager.getStorageMemorySize(),
-                           "rewindActive": self._historyRewinder.getStatus(),
                            "branchStartTime": fs.time if fs is not None else 0,
                            "branchEndTime": ls.time if ls is not None else 0
                            })
@@ -227,9 +261,38 @@ class PipelineDebugger:
 
     # ------------------------ HISTORY EXECUTION -------------------------
 
-    def _activateHistory(self):
+    def _activateHistory(self, eventThread: bool = False):
+        # eventThread if called from same thread as asyncio loop
+
+        if self._pipelineHistory.getHistoryState().isActive():  # If pipeline is already paused return
+            return
+
+        loop = self.getRuntimeManager().getEventLoop()
+
         # Immediately pauses pipeline
-        self._runtimeManager.getEventLoop().call_soon_threadsafe(self._historyAsyncioEvent.clear)
+
+        if eventThread:
+            self._historyEvent.clear()
+        else:
+            loop.call_soon_threadsafe(self._historyEvent.clear)
+
+        # Block until pipeline pausing is completed
+
+        try:
+            if eventThread:
+                self._pauseExecution()  # No need to wait since we are on the event thread and can just call the func
+            else:
+                async def asyncPause():
+                    self._pauseExecution()
+
+                fut = asyncio.run_coroutine_threadsafe(asyncPause(), loop)
+                fut.result()  # Required to extract fut
+        except CancelledError:  # Pipeline stopped
+            ...
+
+    def _pauseExecution(self):
+        # Runs on the event loop synchronously
+        self._historyEvent.clear()
 
         with self._historyLock:
             self._pipelineHistory.onHistoryActivated()
@@ -238,14 +301,28 @@ class PipelineDebugger:
 
         self._historyBufferManager.onPauseExecution()
 
-        self.sendStepData()
+        self._sendStepData()
 
     def setHistoryStep(self, stepID: int, branchID: int):
+        if not self._pipelineHistory.getHistoryState().isActive():
+            return
+
         with self._historyLock:
             self._pipelineHistory.traverseToStep(stepID, branchID)
 
     def _deactivateHistory(self):
-        # Triggers continuation
+        if not self._pipelineHistory.getHistoryState().isActive():  # If pipeline is still running
+            return
+
+        # Block until pipeline continuation is completed
+
+        try:
+            asyncio.run_coroutine_threadsafe(self._continueExecution(), self.getRuntimeManager().getEventLoop()).result()
+        except CancelledError:  # Pipeline stopped
+            ...
+
+    async def _continueExecution(self):
+        # Runs on the event loop synchronously
 
         with self._historyLock:
             # Reset timer to current step to have a consistent timing
@@ -253,7 +330,12 @@ class PipelineDebugger:
 
             self._pipelineHistory.onHistoryDeactivated()
 
-        self._runtimeManager.getEventLoop().call_soon_threadsafe(self._historyAsyncioEvent.set)
+        # Notify operators
+
+        for op in self.getRuntimeManager().getPipeline().getAllOperators():
+            await op.getDebugger().continueHistory()
+
+        self._historyEvent.set()  # Allows operators to continue executing
 
     @staticmethod
     def _getCurrentHESocketData(step: DebugStep, undo: bool):
@@ -274,7 +356,7 @@ class PipelineDebugger:
     def onHistoryBranchUpdate(self, branch: PipelineHistoryBranch):
         if self._currentHGUSocketTuple is None:
             self._currentHGUSocketTuple = HistoryBranchUpdateSocketTuple(self._onHGUSocketDataSent, branch)
-            self._serverManager.sendSocketData(self._currentHGUSocketTuple)
+            self.serverManager.sendSocketData(self._currentHGUSocketTuple)
         else:
             self._currentHGUSocketTuple.addBranch(branch)
 
@@ -283,14 +365,16 @@ class PipelineDebugger:
 
     # ---------------------------- BREAKPOINTS ---------------------------
 
-    def triggerBreakpoint(self, stepID: int, opID: int, bp: DebugBreakpoint, index: int):
+    def triggerBreakpoint(self, ds: DebugStep, index: int):
         if self.getHistoryState() is HistoryState.INACTIVE:
-            self._activateHistory()
+            self._activateHistory(True)
 
-        self._serverManager.sendSocketData(json.dumps({"cmd": "triggerBP",
-                                                       "stepID": stepID,
-                                                       "op": opID,
-                                                       "type": bp.stepType.name,
+        self.serverManager.sendSocketData(json.dumps({"cmd": "triggerBP",
+                                                       "stepID": ds.localID,
+                                                       "branchID": ds.branchID,
+                                                       "op": ds.debugTuple.debugger.getOperator().id,
+                                                       "type": ds.type.name,
+                                                       "stepTime": ds.time,
                                                        "bpIndex": index}))
 
     # ------------------------------ GETTER ------------------------------
@@ -301,8 +385,11 @@ class PipelineDebugger:
     def getHistory(self) -> PipelineHistory:
         return self._pipelineHistory
 
-    def getHistoryAsyncioEvent(self) -> asyncio.Event:
-        return self._historyAsyncioEvent
+    def getHistoryEvent(self) -> asyncio.Event:
+        return self._historyEvent
+
+    def getHistoryEventLock(self) -> asyncio.Lock:
+        return self._historyEventLock
 
     def getHistoryState(self) -> HistoryState:
         return self._pipelineHistory.getHistoryState()
@@ -314,7 +401,7 @@ class PipelineDebugger:
         return self._pipelineHistory.getLastStepForCurrentBranch()
 
     def getRuntimeManager(self) -> RuntimeManager:
-        return self._runtimeManager
+        return self.runtimeManager
 
     def getProvInspector(self):
         return self._provenanceInspector
@@ -323,4 +410,4 @@ class PipelineDebugger:
         return self._historyBufferManager
 
     def getServerManager(self):
-        return self._serverManager
+        return self.serverManager

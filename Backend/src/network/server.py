@@ -1,140 +1,134 @@
+from __future__ import annotations
 import json
 import logging
 import threading
 import time
-import traceback
-from enum import Enum
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from queue import Queue
-from typing import Callable, Optional
+from typing import Dict, Optional, TYPE_CHECKING
 
 from websockets.sync.server import serve, ServerConnection, WebSocketServer as WebSocketServerImpl
 
-from config import NETWORKING_SOCKET_SEND_QUEUE_CAPACITY
-from utils.utils import printWarning
+from network.commands.commands import Command
+from network.commands.debuggerCmds import ChangeDebuggerStateCMD, RequestDebuggerStepCMD, ExecuteProvQueryCMD, \
+    ChangeDebuggerConfigCMD, DebuggerStepChange
+from network.commands.monitorCmds import ChangeMonitorConfigCMD
+from network.commands.pipelineCmds import StartPipelineCMD, StopPipelineCMD, UpdatePipelineCMD, ChangeAdvisorConfigCMD, \
+    SimulateCMD
+from network.commands.compileCmds import CompileModeStartCMD, CompileAnalyzeCMD, CompileModeEndCMD, CompilePipelineCMD
+from network.commands.storageCmds import RetrieveStoredPipelines, RequestStoredPipeline, DeleteStoredPipeline, \
+    StorePipeline, RetrieveStoredOperators, DeleteStoredOperator, StoreOperator
 
-
-class ReceiveType(Enum):
-    START_PIPELINE = 1
-    UPDATE_PIPELINE = 2
-    STOP_PIPELINE = 3
-    CHANGE_HEATMAP = 5
-    COMPILE = 6
-    TOGGLE_ADVISOR = 7
-    CHANGE_DEBUGGER_STATE = 8
-    CHANGE_DEBUGGER_CONFIG = 9,
-    CHANGE_DEBUGGER_STEP = 11,
-    REQUEST_DEBUGGER_STEP = 12,
-    SIMULATE = 10
+if TYPE_CHECKING:
+    from streamVizzard import StreamVizzard
 
 
 class ServerManager:
-    httpd = HTTPServer
-    apiPort = int
-    socketPort = int
-    running = bool
-
-    def __init__(self):
-        self.manager = None
-
-        logging.getLogger("websockets").addHandler(logging.NullHandler())
-        logging.getLogger("websockets").propagate = False
-
-        self.apiThread = threading.Thread(target=self._apiThreadFunc, daemon=True)
-        self.socketThread = threading.Thread(target=self._socketThreadFunc)
-        self.websocket: Optional[WebSocketServer] = None
-
-    def start(self, port, socketPort, manager):
-        self.apiPort = port
-        self.socketPort = socketPort
+    def __init__(self, manager: StreamVizzard):
         self.manager = manager
 
-        server_address = ('', port)
-        self.httpd = HTTPServer(server_address, Server)
+        self.apiServer: Optional[APIServer] = None
+        self.socketServer: Optional[WebSocketServer] = None
 
-        self.httpd.RequestHandlerClass.serverManager = self
+        self._commandLookup: Dict[str, Command] = dict()
 
-        self.apiThread.start()
+    def start(self, apiPort: int, socketPort: int):
+        self._commandLookup = self._setupCommands()
 
-        self.socketThread.start()
+        self.apiServer = APIServer(self, apiPort)
+        self.apiServer.startup()
 
-        return self.apiThread, self.socketThread
+        self.socketServer = WebSocketServer(self, socketPort)
+        self.socketServer.startup()
 
     def shutdown(self):
-        if self.websocket is not None:
-            self.websocket.shutdown()
+        if self.socketServer is not None:
+            self.socketServer.shutdown()
 
-        self.running = False
+        if self.apiServer is not None:
+            self.apiServer.shutdown()
 
     def sendSocketData(self, data):
-        self.websocket.sendData(data)
+        if self.socketServer is None:
+            return
+
+        self.socketServer.sendData(data)
 
     def clearSocketData(self):
-        self.websocket.clearData()
+        if self.socketServer is None:
+            return
 
-    def _apiThreadFunc(self):
-        print("Starting server at port " + str(self.apiPort))
-        self.running = True
+        self.socketServer.clearData()
 
-        while self.running:
-            try:
-                self.httpd.handle_request()
-            except KeyboardInterrupt:
-                pass
+    def flushSocketData(self):
+        if self.socketServer is None:
+            return
 
-        self.httpd.server_close()
-
-        print("Stopping server")
-
-    def _socketThreadFunc(self):
-        print("Starting socket at port " + str(self.socketPort))
-
-        self.websocket = WebSocketServer(self.handleReceivedData, self.onSocketClosed)
-        self.websocket.startup(self.socketPort)
-
-        print("Stopping socket")
-
-    def handleReceivedData(self, receiveType: ReceiveType, data: json):
-        try:  # TODO: LOOKUP
-            if receiveType == ReceiveType.START_PIPELINE:
-                self.manager.onPipelineStart(data)
-            elif receiveType == ReceiveType.UPDATE_PIPELINE:
-                self.manager.onPipelineUpdated(data)
-            elif receiveType == ReceiveType.STOP_PIPELINE:
-                self.manager.onPipelineStop(data)
-            elif receiveType == ReceiveType.CHANGE_HEATMAP:
-                self.manager.onHeatmapChanged(data)
-            elif receiveType == ReceiveType.COMPILE:
-                self.manager.compilePipeline(data)
-            elif receiveType == ReceiveType.SIMULATE:
-                self.manager.simulatePipeline(data)
-            elif receiveType == ReceiveType.TOGGLE_ADVISOR:
-                self.manager.onAdvisorToggled(data)
-            elif receiveType == ReceiveType.CHANGE_DEBUGGER_STATE:
-                self.manager.onDebuggerStateChanged(data)
-            elif receiveType == ReceiveType.CHANGE_DEBUGGER_CONFIG:
-                self.manager.onDebuggerConfigChanged(data)
-            elif receiveType == ReceiveType.CHANGE_DEBUGGER_STEP:
-                self.manager.onDebuggerStepChange(data)
-            elif receiveType == ReceiveType.REQUEST_DEBUGGER_STEP:
-                self.manager.onDebuggerRequestStep(data)
-
-        except Exception:
-            logging.log(logging.ERROR, traceback.format_exc())
+        self.socketServer.flushData()
 
     def onSocketClosed(self):
-        self.manager.onPipelineStop(None)
+        self.manager.stopPipeline()
+
+    # TODO: Restrict api/socket access to commands + return StatusCode on api!
+    def executeCommand(self, name: str, data) -> Optional[str]:
+        cmd = self._commandLookup.get(name, None)
+
+        if cmd is not None:
+            return cmd.handleCommand(self.manager.runtimeManager, data)
+
+        return None
+
+    @staticmethod
+    def _setupCommands() -> Dict[str, Command]:
+        commandLookup:  Dict[str, Command] = dict()
+
+        def _addCmd(cmd: Command):
+            commandLookup[cmd.name] = cmd
+
+        _addCmd(StartPipelineCMD())
+        _addCmd(StopPipelineCMD())
+        _addCmd(UpdatePipelineCMD())
+        _addCmd(ChangeAdvisorConfigCMD())
+        _addCmd(SimulateCMD())
+
+        _addCmd(ChangeMonitorConfigCMD())
+
+        _addCmd(CompileAnalyzeCMD())
+        _addCmd(CompileModeStartCMD())
+        _addCmd(CompileModeEndCMD())
+        _addCmd(CompilePipelineCMD())
+
+        _addCmd(RetrieveStoredPipelines())
+        _addCmd(RequestStoredPipeline())
+        _addCmd(DeleteStoredPipeline())
+        _addCmd(StorePipeline())
+        _addCmd(RetrieveStoredOperators())
+        _addCmd(DeleteStoredOperator())
+        _addCmd(StoreOperator())
+
+        _addCmd(ChangeDebuggerStateCMD())
+        _addCmd(ChangeDebuggerConfigCMD())
+        _addCmd(RequestDebuggerStepCMD())
+        _addCmd(ExecuteProvQueryCMD())
+        _addCmd(DebuggerStepChange())
+
+        return commandLookup
 
 
 class WebSocketServer:
-    def __init__(self, onHandleData: Callable, onSocketClosed: Callable):
+    def __init__(self, manager: ServerManager, port: int):
+        self.manager = manager
         self.running = False
 
-        self.onHandleData = onHandleData
-        self.onSocketClosed = onSocketClosed
+        self.port = port
+
+        self.stopEvent = threading.Event()
+
+        # Disable websocket default logging
+        logging.getLogger("websockets").addHandler(logging.NullHandler())
+        logging.getLogger("websockets").propagate = False
 
         self.sendQueue = Queue(0)
-        self.maxQueueSize = NETWORKING_SOCKET_SEND_QUEUE_CAPACITY
 
         self._server: Optional[WebSocketServerImpl] = None
         self._waitEvent = threading.Event()
@@ -142,14 +136,22 @@ class WebSocketServer:
 
         self.client: Optional[ServerConnection] = None
 
-    def startup(self, port):
+    def startup(self):
+        print("Starting socket (port " + str(self.port) + ")")
+
+        thread = threading.Thread(target=self._threadFunc, daemon=True)
+        thread.start()
+
+    def _threadFunc(self):
         self.running = True
         self._sendThread.start()
 
-        with serve(self._handleConnection, "localhost", port) as server:
+        with serve(self._handleConnection, "0.0.0.0", self.port) as server:
             self._server = server
 
             server.serve_forever()
+
+        self.stopEvent.set()
 
     def _handleConnection(self, connection: ServerConnection):
         if self.client is not None:  # Only allow one connection
@@ -164,33 +166,26 @@ class WebSocketServer:
         while True:
             try:
                 data = self.client.recv()
-
-                # print("received: " + data)
-            except:
+            except Exception:
                 print("Client disconnected")
 
                 self.clearData()
                 self.client = None
 
-                self.onSocketClosed()
+                self.manager.onSocketClosed()
 
                 return
 
             try:
                 jdata = json.loads(data)
 
-                cmdType: Optional[ReceiveType] = None
-
                 cmd = jdata["cmd"]
 
-                if cmd == "pipelineUpdate":
-                    cmdType = ReceiveType.UPDATE_PIPELINE
-                elif cmd == "debuggerStepChange":
-                    cmdType = ReceiveType.CHANGE_DEBUGGER_STEP
+                resp = self.manager.executeCommand(cmd, jdata)
 
-                if cmdType is not None:
-                    self.onHandleData(cmdType, jdata)
-            except:
+                if resp is not None:
+                    self.sendData(resp)
+            except Exception:
                 ...
 
     def _sendLoop(self):
@@ -219,11 +214,6 @@ class WebSocketServer:
         if self.client:
             self.sendQueue.put(data)
 
-            if self.maxQueueSize is not None and self.sendQueue.qsize() > self.maxQueueSize:
-                self.sendQueue.get(False)  # Pop oldest element to make space for new element
-
-                printWarning("Socket connection to slow, we are dropping packages! Results on UI might be incorrect!")
-
             self._waitEvent.set()
 
     def clearData(self):
@@ -231,65 +221,96 @@ class WebSocketServer:
 
         self._waitEvent.clear()
 
+    def flushData(self):
+        # Waits until all data is flushed
+
+        while self.sendQueue.qsize() > 0:
+            time.sleep(0.01)
+
     def shutdown(self):
+        print("Stopping socket")
+
         self.running = False
 
-        self._server.shutdown()
+        if self._server is not None:
+            self._server.shutdown()
+
+            self.stopEvent.wait()
 
 
-class Server(BaseHTTPRequestHandler):
-    serverManager = ServerManager
+class APIServer:
+    class ServerHandler(BaseHTTPRequestHandler):
+        apiServer: APIServer
 
-    def log_message(self, f: str,  *args):
-        pass  # Remove logging of http server
+        def log_message(self, f: str,  *args):
+            pass  # Remove logging of http server
 
-    def _set_response(self):
-        self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Content-type', 'application/json')
-        self.end_headers()
+        def do_GET(self):
+            self._sendResponse()
 
-    def do_GET(self):
-        self._set_response()
-        # self.wfile.write("{'res': 'Ok'}".encode('utf-8'))
+        def do_OPTIONS(self):
+            self.send_response(200, "ok")
+            self.send_header('Access-Control-Allow-Credentials', 'true')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+            self.send_header("Access-Control-Allow-Headers", "X-Requested-With, Content-type, Access-Control-Allow-Origin")
+            self.end_headers()
 
-    def do_OPTIONS(self):
-        self.send_response(200, "ok")
-        self.send_header('Access-Control-Allow-Credentials', 'true')
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header("Access-Control-Allow-Headers", "X-Requested-With, Content-type, Access-Control-Allow-Origin")
-        self.end_headers()
+        def do_POST(self):
+            content_length = int(self.headers['Content-Length'])
 
-    def do_POST(self):
-        content_length = int(self.headers['Content-Length'])  # <--- Gets the size of data
+            data = None
 
-        data = self.rfile.read(content_length)
+            if content_length > 0:
+                data = json.loads(self.rfile.read(content_length))
 
-        # post_data = self.rfile.read(content_length) # <--- Gets the data itself
-        post_data = json.loads(data)
+            commandName = self.path.removeprefix("/")
 
-        receiveType = ReceiveType
+            resp = self.apiServer.manager.executeCommand(commandName, data)
 
-        if self.path == "/startPipeline":
-            receiveType = ReceiveType.START_PIPELINE
-        elif self.path == "/stopPipeline":
-            receiveType = ReceiveType.STOP_PIPELINE
-        elif self.path == "/changeHeatmap":
-            receiveType = ReceiveType.CHANGE_HEATMAP
-        elif self.path == "/compile":
-            receiveType = ReceiveType.COMPILE
-        elif self.path == "/simulate":
-            receiveType = ReceiveType.SIMULATE
-        elif self.path == "/toggleAdvisor":
-            receiveType = ReceiveType.TOGGLE_ADVISOR
-        elif self.path == "/changeDebuggerState":
-            receiveType = ReceiveType.CHANGE_DEBUGGER_STATE
-        elif self.path == "/changeDebuggerConfig":
-            receiveType = ReceiveType.CHANGE_DEBUGGER_CONFIG
-        elif self.path == "/requestDebuggerStep":
-            receiveType = ReceiveType.REQUEST_DEBUGGER_STEP
+            self._sendResponse(resp)
 
-        self._set_response()
+        def _sendResponse(self, content: Optional[str] = None):
+            self.send_response(200)
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
 
-        self.serverManager.handleReceivedData(receiveType, post_data)
+            if content is not None:
+                self.wfile.write(content.encode('utf-8'))
+
+    def __init__(self, manager: ServerManager, port: int):
+        self.running = False
+        self.manager = manager
+
+        self.port = port
+
+        self.stopEvent = threading.Event()
+
+        # noinspection PyTypeChecker
+        self.server = HTTPServer(('', port), APIServer.ServerHandler)
+        APIServer.ServerHandler.apiServer = self
+
+    def startup(self):
+        print("Starting api (port " + str(self.port) + ")")
+
+        thread = threading.Thread(target=self._threadFunc, daemon=True)
+        thread.start()
+
+    def _threadFunc(self):
+        self.running = True
+
+        self.server.serve_forever()
+
+        self.server.server_close()
+
+        self.stopEvent.set()
+
+    def shutdown(self):
+        print("Stopping api")
+
+        self.running = False
+
+        self.server.shutdown()
+
+        self.stopEvent.wait()

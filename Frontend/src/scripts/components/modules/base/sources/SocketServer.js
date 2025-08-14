@@ -21,18 +21,4 @@ export default class _SocketServer extends Component {
             [{name: "Data", socket: anySocket}],
             [node.ip, node.port, node.maxBytes]);
     }
-
-    getData(node) {
-        return {
-            ip: node.ip.getValue(),
-            port: node.port.getValue(),
-            maxBytes: node.maxBytes.getValue()
-        }
-    }
-
-    setData(node, data) {
-        node.ip.setValue(data.ip);
-        node.port.setValue(data.port);
-        node.maxBytes.setValue(data.maxBytes);
-    }
 }

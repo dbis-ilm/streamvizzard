@@ -6,7 +6,7 @@ import numpy as np
 
 from spe.pipeline.operators.imageProc.dataTypes.image import Image
 from spe.pipeline.operators.operator import Operator
-from spe.runtime.structures.tuple import Tuple
+from spe.common.tuple import Tuple
 
 
 class ImgMerge(Operator):
@@ -16,7 +16,7 @@ class ImgMerge(Operator):
     """
 
     def __init__(self, opID: int):
-        super(ImgMerge, self).__init__(opID, 4, 1, allowNoneMerge=True)
+        super(ImgMerge, self).__init__(opID, 4, 1)
 
     def setData(self, data: json):
         ...

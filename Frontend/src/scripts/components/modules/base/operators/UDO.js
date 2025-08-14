@@ -7,13 +7,14 @@ import {NumControl} from "@/scripts/components/modules/base/controls/NumberCtrl"
 
 export default class _UDO extends Component {
     constructor(pathIdentifier){
-        super("UDO", "UDO", pathIdentifier);
+        super("UDO", "User Defined Operator", pathIdentifier);
     }
 
     builder(node) {
-        node.inCount = new NumControl(node, "inCount", false, 1,"Inputs", "", 0);
-        node.outCount = new NumControl(node, "outCount", false, 1, "Outputs", "", 0);
-        node.code = new CodeControl(node, 'code', false, "class UserDefinedOperator:\n" +
+        node.inCount = new NumControl(node, "inputs", false, 1,"Inputs", "", 0);
+        node.outCount = new NumControl(node, "outputs", false, 1, "Outputs", "", 0);
+        node.code = new CodeControl(node, 'code', false, CodeControl.CodeType.UDO,
+        "class UserDefinedOperator:\n" +
             "    def onStart(self):\n" +
             "        ...\n\n" +
             "    def execute(self, tupleIn: Tuple) -> tuple:\n" +
@@ -36,18 +37,8 @@ export default class _UDO extends Component {
         super.onControlValueChanged(ctrl, node, oldVal);
     }
 
-    getData(node) {
-        return {
-            code: node.code.getValue(),
-            inputs: node.inCount.getValue(),
-            outputs: node.outCount.getValue()
-        };
-    }
-
     async setData(node, data) {
-        node.code.setValue(data.code);
-        node.inCount.setValue(data.inputs);
-        node.outCount.setValue(data.outputs);
+        await super.setData(node, data);
 
         await this.updateSockets(node, node.inCount.getValue(), node.outCount.getValue(), anySocket, anySocket).then();
     }

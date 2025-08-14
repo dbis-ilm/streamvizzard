@@ -23,6 +23,9 @@ class Socket:
                 del self._connections[i]
                 return
 
+    def clearConnections(self):
+        self._connections.clear()
+
     def hasConnections(self) -> bool:
         return len(self._connections) > 0
 

@@ -1,5 +1,6 @@
 import HistoryAction from "@/scripts/tools/editorHistory/HistoryAction";
-import {getOperatorByID} from "@/components/Main";
+import {PipelineService} from "@/scripts/services/pipelineState/PipelineService";
+import {createConnection} from "@/scripts/tools/Utils";
 
 class ConnectionAction extends HistoryAction {
     constructor(editor, con) {
@@ -17,7 +18,7 @@ class ConnectionAction extends HistoryAction {
     }
 
     removeConnection() {
-        let outNode = getOperatorByID(this.outNodeID);
+        let outNode = PipelineService.getOperatorByID(this.outNodeID);
         if(outNode == null) return;
 
         let connection = outNode.outputs.get(this.outSocketKey).connections
@@ -30,37 +31,21 @@ class ConnectionAction extends HistoryAction {
     }
 
     createConnection() {
-        let nodeOut = getOperatorByID(this.outNodeID);
+        let nodeOut = PipelineService.getOperatorByID(this.outNodeID);
         if(nodeOut == null) return;
 
-        let nodeIn = getOperatorByID(this.inNodeID); //NULL when recreating deleted op
+        let nodeIn = PipelineService.getOperatorByID(this.inNodeID); //NULL when recreating deleted op
         if(nodeIn == null) return;
 
         let socketOut = nodeOut.outputs.get(this.outSocketKey);
         let socketIn = nodeIn.inputs.get(this.inSocketKey);
 
-        this._connect(socketOut, socketIn, this.connectionID);
+        createConnection(this.editor, socketOut, socketIn, this.connectionID);
 
-        //Update stats
+        // Update stats
         let connection = socketOut.connections.find(c => c.input.node.id === this.inNodeID && c.input.key === this.inSocketKey);
         connection.total = this.lastTotal;
         connection.throughput = this.lastTP;
-    }
-
-    _connect(output, input, id) {
-        //Override connect to set id before calling the events
-        if (!this.editor.trigger('connectioncreate', { output, input })) return;
-
-        try {
-            const connection = output.connectTo(input);
-
-            connection.id = id;
-            this.editor.view.addConnection(connection);
-
-            this.editor.trigger('connectioncreated', connection);
-        } catch (e) {
-            this.editor.trigger('warn', e);
-        }
     }
 
     isPipelineChangeEvent() { return true; }

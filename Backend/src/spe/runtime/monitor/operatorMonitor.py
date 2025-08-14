@@ -1,132 +1,134 @@
 from __future__ import annotations
 
 import json
-from collections import deque
-from typing import TYPE_CHECKING, Optional, Deque
+from typing import TYPE_CHECKING, Optional
 
-from config import MONITORING_OPERATOR_MAX_TUPLES
 from spe.runtime.debugger.debugTuple import DebugTuple
+from spe.runtime.debugger.debuggingUtils import retrieveStoredDTRef
 from spe.runtime.debugger.history.historyState import HistoryState
 from spe.runtime.monitor.operatorMonitorData import OperatorMonitorData
 from spe.runtime.monitor.operatorMonitorTuple import OperatorMonitorTuple
-from spe.runtime.runtimeCommunicator import onTupleProcessed, getHistoryState, onOperatorError
-from spe.runtime.structures.tuple import Tuple
+from spe.runtime.runtimeGateway import getRuntimeManager
+from spe.common.tuple import Tuple
+from streamVizzard import StreamVizzard
 
 if TYPE_CHECKING:
+    from spe.runtime.monitor.pipelineMonitor import PipelineMonitor
     from spe.pipeline.operators.operator import Operator
 
 
 class OperatorMonitor:
     def __init__(self, operator: Operator):
+        self._monitor = getRuntimeManager().gateway.getMonitor()
+
         self._operator = operator
 
-        self._sendData = True
-        self._sendStats = False
+        self._sendData = False
+
+        self._currentTuple: Optional[Tuple] = None
 
         # Data
         self.data = OperatorMonitorData(self._operator)
 
-        # Error
-        self.errorMsg: Optional[str] = None
-
         # Statistics
-        self._monitorData: Deque[OperatorMonitorTuple] = deque()
 
-        self._avgExecutionTime = 0  # Calculated
-        self._avgDataSize = 0  # Calculated
+        self._totalTuples = 0
+        self._avgExecutionTime = 0  # Calculated [ms]
+        self._avgDataSize = 0  # Calculated [bytes]
 
         # Register listener
         self._operator.getEventListener().register(self._operator.EVENT_TUPLE_PROCESSED, self._onTupleProcessed)
 
     def setCtrlData(self, data: json):
         if data is not None:
-            self._setMonitorState(data["state"])
+            self.configureDataSend(data["state"]["sendData"])
 
             if data["dMode"] is not None:
                 self._setDisplayMode(data["dMode"])
 
     def getCtrlData(self) -> dict:
-        return {"state": {"sendData": self._sendData,
-                          "sendStats": self._sendStats},
+        return {"state": {"sendData": self._sendData},
                 "dMode": {"socket": self.data.getDisplaySocket(),
                           "mode": self.data.getDisplayMode(),
                           "inspect": self.data.getInspectData(),
                           "settings": self.data.getSettings()}}
 
-    def notifyError(self, errorMsg: str):
-        # Error is also set here so the pipeline monitor can send the data when a tuple is produced
-        # This allows the error to disappear when no new error is produced
+    def notifyError(self, errorMsg: Optional[str]):
+        # If error is None, the UI is informed to clear to error
 
-        self.errorMsg = errorMsg
-
-        onOperatorError(self._operator, errorMsg)
+        self._monitor.onOperatorError(self._operator, errorMsg)
 
     def _onTupleProcessed(self, tupleIn: Tuple, executionDuration):
         # tupleIn might be None if the very first process tuple DS is undone
 
+        historyState = self._operator.getHistoryState()
+        dt = self._operator.getDebugger().getDT(tupleIn) if tupleIn is not None and tupleIn.operator.isDebuggingEnabled() else None
+
+        # ----- Display Data -----
+
         if self._sendData:
-            self.data.setData(tupleIn.data if tupleIn is not None else None)
+            displayTuple = tupleIn
 
-        dt = tupleIn.operator.getDebugger().getDT(tupleIn) if tupleIn is not None and tupleIn.operator.isDebuggingEnabled() else None
+            # Restore previous (if available), if we undo this tuple processing
+            if historyState == HistoryState.TRAVERSING_BACKWARD and tupleIn is not None:
+                prevDT = retrieveStoredDTRef(self._operator, tupleIn, "opMon_prevTup")
 
-        historyState = getHistoryState()
+                displayTuple = prevDT.getTuple() if prevDT is not None else None
+
+            self.data.setData(displayTuple.data if displayTuple is not None else None)
+
+        # ----- Statistics -----
 
         if historyState == HistoryState.TRAVERSING_BACKWARD:
             self._undoRegister(dt)
-        elif tupleIn is None:
-            return
         elif historyState == HistoryState.TRAVERSING_FORWARD:
-            self._registerTuple(dt.getAttribute("omData"), None)
+            self._registerTuple(dt.getAttribute("omData", None, True), None)
         else:
+            if dt is not None and self._currentTuple is not None:
+                dt.registerAttribute("opMon_prevTup", self._currentTuple.uuid)
+
             self._registerTuple(OperatorMonitorTuple(max(0, executionDuration * 1000), tupleIn.calcMemorySize()), dt)
 
-        onTupleProcessed(self._operator)
+        self._currentTuple = tupleIn
+
+        self._monitor.onTupleProcess(self._operator)
 
     def _registerTuple(self, t: OperatorMonitorTuple, dt: Optional[DebugTuple]):
-        self._monitorData.append(t)
-
         self._updateInternalStats(t, True)
 
-        if len(self._monitorData) > MONITORING_OPERATOR_MAX_TUPLES:
-            removed = self._monitorData.popleft()
-
-            self._updateInternalStats(removed, False)
-
         if dt is not None:
-            dt.registerAttribute("omData", t)
+            dt.registerAttribute("omData", t, True)
 
-            # Register the now first element of the queue since this will be removed in next addition
-            if len(self._monitorData) == MONITORING_OPERATOR_MAX_TUPLES:
-                dt.registerAttribute("omLastE", self._monitorData[0])
+    def _undoRegister(self, dt: DebugTuple):
+        # Remove last element which was added by this step
 
-    def _undoRegister(self, dt):
-        # This element will be removed since it was added in the last step
-        lastElm = self._monitorData.pop()
-        self._updateInternalStats(lastElm, False)
+        elmToRemove = dt.getAttribute("omData", None, True)
 
-        if dt is None:
-            return
-
-        # Check if we need to add the element that was removed during the undone register
-        removed = dt.getAttribute("omLastE")
-        if removed is not None:
-            self._monitorData.appendleft(removed)
-            self._updateInternalStats(removed, True)
+        self._updateInternalStats(elmToRemove, False)
 
     def _updateInternalStats(self, t: OperatorMonitorTuple, add: bool):
-        qSize = len(self._monitorData)
+        # Exponential Moving Average, no need to remove the oldest values since their influence diminishes over time
 
-        if qSize == 0:
-            self._avgExecutionTime = 0
-            self._avgDataSize = 0
+        SMOOTH = StreamVizzard.getConfig().MONITORING_OPERATOR_SMOOTH_FACTOR
 
-            return
+        if add:
+            self._totalTuples += 1
 
-        self._avgExecutionTime = (self._avgExecutionTime * (qSize + (-1 if add else 1))
-                                  + (t.executionDuration if add else -t.executionDuration)) / qSize
+            t.prevAvgExecutionDuration = self._avgExecutionTime  # Store prev value for undo
+            t.prevAvgDataSize = self._avgDataSize
 
-        self._avgDataSize = (self._avgDataSize * (qSize + (-1 if add else 1))
-                             + (t.outputSize if add else -t.outputSize)) / qSize
+            if self._totalTuples > 1:  # Can only apply EMA if we already have a value
+                self._avgExecutionTime = SMOOTH * t.executionDuration + (1 - SMOOTH) * self._avgExecutionTime
+                self._avgDataSize = SMOOTH * t.outputSize + (1 - SMOOTH) * self._avgDataSize
+            else:
+                self._avgExecutionTime = t.executionDuration
+                self._avgDataSize = t.outputSize
+
+        else:  # Revert the addition of the recent element
+            self._totalTuples -= 1
+
+            self._avgExecutionTime = t.prevAvgExecutionDuration
+            self._avgDataSize = t.prevAvgDataSize
 
     def getDisplayData(self):
         if not self._sendData:
@@ -134,30 +136,20 @@ class OperatorMonitor:
 
         return self.data.getDisplayData()
 
-    def resetStatistics(self):
-        self._monitorData.clear()
-        self._avgExecutionTime = 0
-
     def getAvgExecutionTime(self):
         return self._avgExecutionTime
 
     def getAvgDataSize(self):
         return self._avgDataSize
 
-    def retrieveError(self):
-        err = self.errorMsg
-        self.errorMsg = None
-        return err
+    def getMonitor(self) -> PipelineMonitor:
+        return self._monitor
 
     def isDataEnabled(self) -> bool:
         return self._sendData
 
-    def isStatsEnabled(self) -> bool:
-        return self._sendStats
-
-    def _setMonitorState(self, state: json):
-        self._sendData = state["sendData"]
-        self._sendStats = state["sendStats"]
+    def configureDataSend(self, send: bool):
+        self._sendData = send
 
     def _setDisplayMode(self, changeData):
         newSocket = changeData["socket"]

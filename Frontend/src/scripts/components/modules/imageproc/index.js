@@ -1,10 +1,10 @@
 import Operators from "@/scripts/components/modules/imageproc/operators";
 import Sources from "@/scripts/components/modules/imageproc/sources";
 import Rete from "rete";
-import Scatterplot from "@/components/templates/displays/ScatterplotDT";
+import Scatterplot from "@/components/features/monitor/displays/ScatterplotDT";
 import {MonitorDataType} from "@/scripts/components/monitor/MonitorDataType";
-import ImageDT from "@/components/templates/displays/ImageDT";
-import LiteralDT from "@/components/templates/displays/LiteralDT";
+import ImageDT from "@/components/features/monitor/displays/ImageDT";
+import LiteralDT from "@/components/features/monitor/displays/LiteralDT";
 
 
 let getComponents = () => {
@@ -36,8 +36,8 @@ IMG_DT.registerDisplayMode(0, "Raw", ImageDT);
 IMG_DT.registerDisplayMode(1, "Grayscale", ImageDT);
 IMG_DT.registerDisplayMode(2, "Histogram", Scatterplot, {
     "xrange": [0, 255],
-    xvisible: true,
-    yvisible: false,
+    "xvisible": true,
+    "yvisible": false,
     "plots": [{"line": {"color": "rgb(0, 0, 255)", "width": 1}},
         {"line": {"color": "rgb(0, 255, 0)", "width": 1}},
         {"line": {"color": "rgb(255, 0, 0)", "width": 1}}]});
@@ -57,6 +57,6 @@ export default {Operators, Sources, getComponents, getSockets, getDataTypes}
 
 export const Module = {
     name: "ImageProc",
-    displayName: "Images",
-    bgColor: "radial-gradient(circle, rgba(94, 165, 255,0.75) 0%, rgba(94, 165, 255,0.9) 100%)"
+    displayName: "Image Processing",
+    bgColor: "radial-gradient(circle, rgb(131, 186, 255) 0%, rgb(94, 165, 255) 100%)"
 }

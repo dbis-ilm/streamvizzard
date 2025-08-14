@@ -2,9 +2,10 @@ from enum import Enum
 from queue import Queue  # TODO: REMOVE QUEUE (DEQUE)
 from typing import Optional, Dict
 
-from config import MONITORING_OPERATOR_MAX_TUPLES
 from spe.runtime.debugger.debugTuple import DebugTuple
-from spe.runtime.structures.timer import Timer
+from spe.common.timer import Timer
+
+MONITORING_OPERATOR_MAX_TUPLES = 20
 
 
 class OperatorStatisticType(Enum):
@@ -56,7 +57,7 @@ class OperatorMonitorStatistics:
         self._currentEntry = OperatorStatisticEntry()
 
     def redoRegister(self, dt: Optional[DebugTuple]):
-        self._currentEntry = dt.getAttribute("omData")
+        self._currentEntry = dt.getAttribute("omData", True)
         self.registerEntry(None)
 
     def undoRegister(self, dt: Optional[DebugTuple]):
@@ -69,7 +70,7 @@ class OperatorMonitorStatistics:
         newQ = Queue()
 
         # Check if we need to add element that was removed by next register
-        removed = dt.getAttribute("omLastE")
+        removed = dt.getAttribute("omLastE", True)
         if removed is not None:
             newQ.put(removed)
 

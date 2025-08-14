@@ -5,7 +5,7 @@ import cv2
 
 from spe.pipeline.operators.imageProc.dataTypes.image import Image
 from spe.pipeline.operators.operator import Operator
-from spe.runtime.structures.tuple import Tuple
+from spe.common.tuple import Tuple
 
 
 class ImgBlend(Operator):

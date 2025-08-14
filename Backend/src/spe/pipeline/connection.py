@@ -1,12 +1,11 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
-import config
-from spe.runtime.structures.tuple import Tuple
+from spe.common.tuple import Tuple
 from spe.runtime.monitor.connectionMonitor import ConnectionMonitor
+from streamVizzard import StreamVizzard
 
 if TYPE_CHECKING:
     from spe.pipeline.socket import Socket
-    from spe.pipeline.pipeline import Pipeline
 
 
 class Connection:
@@ -15,7 +14,7 @@ class Connection:
         self.input = socketIN
         self.output = socketOUT
 
-        self._monitor = ConnectionMonitor(self) if config.MONITORING_ENABLED else None
+        self._monitor = ConnectionMonitor(self) if StreamVizzard.getConfig().MONITORING_ENABLED else None
 
     def onTupleTransmitted(self, origTuple: Tuple):
         if self._monitor is not None:
@@ -25,11 +24,9 @@ class Connection:
         return self._monitor
 
     @staticmethod
-    def create(pipeline: Pipeline, conID: int, socketIN: Socket, socketOUT: Socket) -> Connection:
+    def create(conID: int, socketIN: Socket, socketOUT: Socket) -> Connection:
         newCon = Connection(conID, socketIN, socketOUT)
         socketIN.addConnection(newCon)
         socketOUT.addConnection(newCon)
-
-        pipeline.registerConnection(newCon)
 
         return newCon

@@ -5,7 +5,7 @@ import cv2
 
 from spe.pipeline.operators.imageProc.dataTypes.image import Image
 from spe.pipeline.operators.operator import Operator
-from spe.runtime.structures.tuple import Tuple
+from spe.common.tuple import Tuple
 
 
 class ImgSplit(Operator):
@@ -28,7 +28,7 @@ class ImgSplit(Operator):
 
         resCh = cv2.split(inMat)  # Tuple of Mats
 
-        matArray = [None] * len(self.outputs)
+        imgArray = [None] * len(self.outputs)
 
         for i in range(0, min(len(self.outputs), len(resCh))):
             mt = resCh[i]
@@ -37,6 +37,6 @@ class ImgSplit(Operator):
             # res = np.zeros(inMat.shape)
             # res[:, :, i] = mt
 
-            matArray[i] = Image(mt)
+            imgArray[i] = Image(mt)
 
-        return self.createTuple(tuple(matArray))
+        return self.createTuple(tuple(imgArray))

@@ -45,13 +45,10 @@ class ConnectionSocketTuple(SocketTuple):
 
 
 class MessageBrokerSocketTuple(SocketTuple):
-    def __init__(self, onSendCallback, operator):
+    def __init__(self, onSendCallback, operators):
         super(MessageBrokerSocketTuple, self).__init__(onSendCallback)
 
-        self.operators = [operator]
-
-    def addOperator(self, operator):
-        self.operators.append(operator)
+        self.operators = operators
 
     def getData(self):
         return createMessageBrokerData(self.operators)

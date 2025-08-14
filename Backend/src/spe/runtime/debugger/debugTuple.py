@@ -4,7 +4,7 @@ import uuid
 from typing import TYPE_CHECKING, Optional, Any
 
 from spe.runtime.debugger.bufferManager.debugTupleStorageInfo import DebugTupleStorageInfo
-from spe.runtime.structures.tuple import Tuple
+from spe.common.tuple import Tuple
 
 if TYPE_CHECKING:
     from spe.runtime.debugger.operatorDebugger import OperatorDebugger
@@ -26,11 +26,16 @@ class DebugTuple:
         self.storageInfo: Optional[DebugTupleStorageInfo] = None
         self.refCount = 0  # How many DS reference this DT
 
-    def registerAttribute(self, name: str, attr) -> DebugTuple:
+    def registerAttribute(self, name: str, attr: Any, uniqueForBranch: bool = False) -> DebugTuple:
         if self._data is None:  # Data was deleted
             return self
 
-        self._data[name] = attr
+        # DTs might hold same attributes for multiple different branches in case the DT was involved in a continuation.
+        # If the value needs to be unique for the branch (for example when using timestamps) add the branch to the ID.
+
+        regBranch = "#" + str(self.debugger.getDebugger().getHistory().getCurrentBranchID()) if uniqueForBranch else ""
+
+        self._data[name + regBranch] = attr
 
         return self
 
@@ -74,8 +79,10 @@ class DebugTuple:
 
         return self._tuple
 
-    def getAttribute(self, name: str, default: Any = None):
-        return self._data.get(name, default)
+    def getAttribute(self, name: str, default: Any = None, uniqueForBranch: bool = False):
+        regBranch = "#" + str(self.debugger.getDebugger().getHistory().getCurrentBranchID()) if uniqueForBranch else ""
+
+        return self._data.get(name + regBranch, default)
 
     def getMemorySize(self) -> int:
         return self._tupleMemorySize  # Value in bytes

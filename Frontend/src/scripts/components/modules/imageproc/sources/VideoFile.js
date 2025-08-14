@@ -11,29 +11,21 @@ export default class _VideoFile extends Component {
     }
 
     builder(node) {
-        node.repeatCtrl  = new BoolControl(node, 'boolCtrl', false, 'Loop',
+        node.repeat  = new BoolControl(node, 'repeat', false, 'Loop',
             'Repeats from the start when reaching end of file');
-        node.frameRateCtrl = new NumControl(node, 'frameRateCtrl', false, 30, "Framerate", "", 0)
-        node.srcCtrl = new StringControl(node, 'srcCtr', false, 'filepath', "Source");
+        node.limitRate = new BoolControl(node, 'limitRate', false, 'Limit Rate',
+            'If the source should produce tuples in a fixed rate', true);
+        node.frameRate = new NumControl(node, 'frameRate', false, 30, "Framerate", "", 0);
+        node.path = new StringControl(node, 'path', false, '', "Source");
+
+        node.limitRate.onChangeCallback = (val) => {
+            node.frameRate.show = val;
+        };
 
         return this.onBuilderInitialized(node,
             new Display(node, IMG_DT.name),
             [],
             [{name: "Image", socket: imgSocket}],
-            [node.srcCtrl, node.repeatCtrl, node.frameRateCtrl]);
-    }
-
-    getData(node) {
-        return {
-            path: node.srcCtrl.getValue(),
-            repeat: node.repeatCtrl.getValue() ? 1 : 0,
-            frameRate: node.frameRateCtrl.getValue()
-        }
-    }
-
-    setData(node, data) {
-        node.srcCtrl.setValue(data.path);
-        node.repeatCtrl.setValue(data.repeat === 1);
-        node.frameRateCtrl.setValue(data.frameRate);
+            [node.path, node.repeat, node.limitRate, node.frameRate]);
     }
 }

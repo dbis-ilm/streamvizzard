@@ -8,15 +8,15 @@ from typing import TYPE_CHECKING, List
 
 import dill
 
-from config import DEBUGGER_BUFFER_MANAGER_CHUNK_MAX_MEM_SIZE, DEBUGGER_BUFFER_MANAGER_CHUNK_MAX_TUP_COUNT
 from spe.runtime.debugger.bufferManager.debugTupleStorageInfo import DebugTupleStorageInfo
+from streamVizzard import StreamVizzard
 
 if TYPE_CHECKING:
     from spe.runtime.debugger.debugTuple import DebugTuple
 
 
-MAX_MEM = DEBUGGER_BUFFER_MANAGER_CHUNK_MAX_MEM_SIZE
-MAX_TUP = DEBUGGER_BUFFER_MANAGER_CHUNK_MAX_TUP_COUNT
+MAX_MEM = StreamVizzard.getConfig().DEBUGGER_BUFFER_MANAGER_CHUNK_MAX_MEM_SIZE
+MAX_TUP = StreamVizzard.getConfig().DEBUGGER_BUFFER_MANAGER_CHUNK_MAX_TUP_COUNT
 
 
 class DataChunk:

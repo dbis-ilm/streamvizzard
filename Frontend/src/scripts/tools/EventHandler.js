@@ -1,4 +1,5 @@
 export const EVENTS = {
+    DISCONNECTED: 0,
     PIPELINE_STATUS_CHANGED: 1, //Param: Status
     CONNECTION_CREATED: 2, //Param: Connection
     CONNECTION_REMOVED: 3, //Param: Connection
@@ -17,19 +18,38 @@ export const EVENTS = {
     NODE_DISPLAY_CHANGED: 16, //Param: Node, Old (only for manual changes)
     DEBUG_UI_EVENT_REGISTERED: 17, // Param: Event
     UI_HISTORY_TRAVERSE: 18, // Param: traversing [bool], debugging[bool]
+    MODAL_OPENED: 19, // Param: Modal Name
+    COMPILE_CONF_CHANGED: 20, // Param: Node
+    PIPELINE_MODIFIED: 21, // Param: PipelineUpdate, Called when any modification to the pipeline was conducted
+    NODE_REPLACED: 22 // Param: Node, OldNode
 }
 
 const eventListener = new Map();
 
-export function registerEvent(event, callback) {
+export function registerEvent(events, callback) {
+    if(!Array.isArray(events)) events = [events];
+
+    for(let event of events) {
+        if(eventListener.has(event)) {
+            let list = eventListener.get(event);
+            list.push(callback);
+        } else {
+            let newList = [];
+            newList.push(callback);
+
+            eventListener.set(event, newList);
+        }
+    }
+
+    return callback;
+}
+
+export function unregisterEvent(event, callback) {
     if(eventListener.has(event)) {
         let list = eventListener.get(event);
-        list.push(callback);
-    } else {
-        let newList = [];
-        newList.push(callback);
 
-        eventListener.set(event, newList);
+        let idx = list.indexOf(callback);
+        if(idx !== -1) list.splice(idx, 1);
     }
 }
 

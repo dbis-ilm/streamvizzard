@@ -1,4 +1,3 @@
-import base64
 import logging
 import math
 import traceback
@@ -6,24 +5,11 @@ import traceback
 import cv2
 
 from spe.pipeline.operators.base.dataTypes.scatterplotD import ScatterplotD
-from spe.pipeline.operators.imageProc.dataTypes.image import Image
-from spe.pipeline.operators.imageProc.operators.math.imgBlend import ImgBlend
-from spe.pipeline.operators.imageProc.operators.process.canny import Canny
-from spe.pipeline.operators.imageProc.operators.process.findContours import FindContours
-from spe.pipeline.operators.imageProc.operators.transform.convert import Convert
-from spe.pipeline.operators.imageProc.operators.process.eqHistogram import EqHistogram
-from spe.pipeline.operators.imageProc.operators.process.gaussianBlur import GaussianBlur
-from spe.pipeline.operators.imageProc.operators.math.imgAdd import ImgAdd
-from spe.pipeline.operators.imageProc.operators.transform.extractROI import ExtractROI
-from spe.pipeline.operators.imageProc.operators.transform.imgLoad import ImgLoad
-from spe.pipeline.operators.imageProc.operators.transform.imgMerge import ImgMerge
-from spe.pipeline.operators.imageProc.operators.math.imgMultiply import ImgMultiply
-from spe.pipeline.operators.imageProc.operators.transform.imgSplit import ImgSplit
-from spe.pipeline.operators.imageProc.operators.process.threshold import Threshold
-from spe.pipeline.operators.imageProc.operators.transform.imgResize import ImgResize
-from spe.pipeline.operators.imageProc.sources.videofile import VideoFile
-from spe.pipeline.operators.imageProc.sources.webcam import WebCam
+from spe.common.dataType import DataType
+from spe.pipeline.operators.imageProc.advisorStrategies.grayInputStrategy import GrayInputStrategy
+from spe.pipeline.operators.imageProc.dataTypes.image import Image, ImageType
 from spe.pipeline.operators.module import Module, MonitorDataType
+from streamVizzard import StreamVizzard
 
 
 class ImageProcModule(Module):
@@ -31,31 +17,34 @@ class ImageProcModule(Module):
         super(ImageProcModule, self).__init__("ImageProc")
 
     def initialize(self):
-        self.registerOp(VideoFile, "Sources/VideoFile")
-        self.registerOp(WebCam, "Sources/WebCam")
+        self.registerOp("spe.pipeline.operators.imageProc.sources.videoFile", "VideoFile", "Sources/VideoFile")
 
-        self.registerOp(Threshold, "Operators/Process/Threshold")
-        self.registerOp(Convert, "Operators/Transform/Convert")
-        self.registerOp(EqHistogram, "Operators/Process/EqHistogram")
-        self.registerOp(ImgSplit, "Operators/Transform/ImgSplit")
-        self.registerOp(ExtractROI, "Operators/Transform/ExtractROI")
-        self.registerOp(GaussianBlur, "Operators/Process/GaussianBlur")
-        self.registerOp(ImgMultiply, "Operators/Math/ImgMultiply")
-        self.registerOp(ImgAdd, "Operators/Math/ImgAdd")
-        self.registerOp(ImgBlend, "Operators/Math/ImgBlend")
-        self.registerOp(ImgMerge, "Operators/Transform/ImgMerge")
-        self.registerOp(ImgResize, "Operators/Transform/ImgResize")
-        self.registerOp(Canny, "Operators/Process/Canny")
-        self.registerOp(FindContours, "Operators/Process/FindContours")
+        if not StreamVizzard.isDockerExecution():
+            self.registerOp("spe.pipeline.operators.imageProc.sources.webcam", "WebCam", "Sources/WebCam")
 
-        self.registerOp(ImgLoad, "Operators/Transform/ImgLoad")
+        self.registerOp("spe.pipeline.operators.imageProc.operators.process.threshold", "Threshold", "Operators/Process/Threshold")
+        self.registerOp("spe.pipeline.operators.imageProc.operators.transform.convert", "Convert", "Operators/Transform/Convert")
+        self.registerOp("spe.pipeline.operators.imageProc.operators.process.eqHistogram", "EqHistogram", "Operators/Process/EqHistogram")
+        self.registerOp("spe.pipeline.operators.imageProc.operators.transform.imgSplit", "ImgSplit", "Operators/Transform/ImgSplit")
+        self.registerOp("spe.pipeline.operators.imageProc.operators.transform.extractROI", "ExtractROI", "Operators/Transform/ExtractROI")
+        self.registerOp("spe.pipeline.operators.imageProc.operators.process.gaussianBlur", "GaussianBlur", "Operators/Process/GaussianBlur")
+        self.registerOp("spe.pipeline.operators.imageProc.operators.math.imgMultiply", "ImgMultiply", "Operators/Math/ImgMultiply")
+        self.registerOp("spe.pipeline.operators.imageProc.operators.math.imgAdd", "ImgAdd", "Operators/Math/ImgAdd")
+        self.registerOp("spe.pipeline.operators.imageProc.operators.math.imgBlend", "ImgBlend", "Operators/Math/ImgBlend")
+        self.registerOp("spe.pipeline.operators.imageProc.operators.transform.imgMerge", "ImgMerge", "Operators/Transform/ImgMerge")
+        self.registerOp("spe.pipeline.operators.imageProc.operators.transform.imgResize", "ImgResize", "Operators/Transform/ImgResize")
+        self.registerOp("spe.pipeline.operators.imageProc.operators.process.canny", "Canny", "Operators/Process/Canny")
+        self.registerOp("spe.pipeline.operators.imageProc.operators.process.findContours", "FindContours", "Operators/Process/FindContours")
+
+        self.registerOp("spe.pipeline.operators.imageProc.operators.transform.imgLoad", "ImgLoad", "Operators/Transform/ImgLoad")
+
+        DataType.register(ImageType.ImageDTD())
 
         imgDT = MonitorDataType("IMAGE", lambda x: isinstance(x, Image))
         imgDT.registerDisplayMode(0, self.displayImageRaw)  # Raw
         imgDT.registerDisplayMode(1, self.displayImageGrayscale)  # Grayscale
         imgDT.registerDisplayMode(2, self.displayImageHistogram)  # Histogram
         self.registerMonitorDataType(imgDT)
-        self.registerJSONEncoder(Image, self.imgToJson)
 
         imgArrayDT = MonitorDataType("ARRAY_IMG", lambda x: MonitorDataType.isArrayOf(x, Image))
         imgArrayDT.registerDisplayMode(0, lambda x, y: len(x))  # Count
@@ -68,17 +57,10 @@ class ImageProcModule(Module):
         imgWindowDT.registerTransformFunc(lambda x: x.toDataArray())
         self.registerMonitorDataType(imgWindowDT)
 
-
-    @staticmethod
-    def imgToJson(displayImg: Image):
-        try:
-            retval, buffer = cv2.imencode(".png", displayImg.mat)
-        except Exception:
-            logging.log(logging.ERROR, traceback.format_exc())
-
-            return None
-
-        return base64.b64encode(buffer).decode("utf-8")
+        # ------ Advisor Strategies ------
+        self.registerAdvisorStrategy(["spe.pipeline.operators.imageProc.operators.process.eqHistogram.EqHistogram",
+                                      "spe.pipeline.operators.imageProc.operators.process.findContours.FindContours",
+                                      "spe.pipeline.operators.imageProc.operators.process.threshold.Threshold"], GrayInputStrategy)
 
     @staticmethod
     def prepareImgForDisplay(img: Image, settings) -> Image:

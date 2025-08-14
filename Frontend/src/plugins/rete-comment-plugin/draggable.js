@@ -1,5 +1,4 @@
 import { listenWindow } from './utils';
-import {hasMouseEventBlocker} from "@/components/Main";
 
 export default class Draggable {
 
@@ -43,7 +42,7 @@ export default class Draggable {
 
     move(e) {
         if (!this.mouseStart) return;
-        if(hasMouseEventBlocker() || this.el.classList.contains("mouseEventBlocker")) return;
+        if(this.el.classList.contains("editorInput")) return;
 
         e.preventDefault();
         e.stopPropagation();

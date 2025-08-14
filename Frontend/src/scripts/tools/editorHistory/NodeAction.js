@@ -1,6 +1,7 @@
 import HistoryAction from "@/scripts/tools/editorHistory/HistoryAction";
-import {getOperatorByID} from "@/components/Main";
-import {createNode, getOperatorSaveData, loadOperatorFromSaveData} from "@/scripts/tools/Utils";
+import {createNode} from "@/scripts/tools/Utils";
+import {PipelineService} from "@/scripts/services/pipelineState/PipelineService";
+import {DataExportService} from "@/scripts/services/dataExport/DataExportService";
 
 class NodeAction extends HistoryAction {
     constructor(editor, node) {
@@ -15,11 +16,11 @@ class NodeAction extends HistoryAction {
 
         this.editor.addNode(node); // Triggers node created
 
-        await loadOperatorFromSaveData(node, data.saveData); // This triggers operator data update
+        await DataExportService.loadOperatorFromSaveData(node, data.saveData); // This triggers operator data update
     }
 
     getNodeData(node) {
-        return {"id": node.id, "name": node.name, "x": node.position[0], "y": node.position[1], "saveData": getOperatorSaveData(node)};
+        return {"id": node.id, "name": node.name, "x": node.position[0], "y": node.position[1], "saveData": DataExportService.getOperatorSaveData(node)};
     }
 }
 
@@ -31,7 +32,7 @@ export class AddNodeAction extends NodeAction {
     }
 
     async undo() {
-        let node = getOperatorByID(this.nodeID);
+        let node = PipelineService.getOperatorByID(this.nodeID);
         if(node == null) return;
 
         this.createData = this.getNodeData(node);
@@ -57,58 +58,13 @@ export class RemoveNodeAction extends NodeAction {
     }
 
     async redo() {
-        let node = getOperatorByID(this.nodeID);
+        let node = PipelineService.getOperatorByID(this.nodeID);
         if(node == null) return;
 
         this.editor.removeNode(node);
     }
 
     isPipelineChangeEvent() { return true; }
-}
-
-export class CollapseNodeAction extends NodeAction {
-    constructor(editor, node, collapse) {
-        super(editor, node);
-
-        this.collapsed = collapse;
-    }
-
-    async undo() {
-        let node = getOperatorByID(this.nodeID);
-        if(node == null) return;
-
-        node.component.setDataMonitorState(node, !this.collapsed, true);
-    }
-
-    async redo() {
-        let node = getOperatorByID(this.nodeID);
-        if(node == null) return;
-
-        node.component.setDataMonitorState(node, this.collapsed, true);
-    }
-}
-
-export class DisplayChangeNodeAction extends NodeAction {
-    constructor(editor, node, prev) {
-        super(editor, node);
-
-        this.prev = prev;
-        this.next = node.component.getMonitorData(node);
-    }
-
-    async undo() {
-        let node = getOperatorByID(this.nodeID);
-        if(node == null) return;
-
-        node.component.setMonitorData(node, this.prev);
-    }
-
-    async redo() {
-        let node = getOperatorByID(this.nodeID);
-        if(node == null) return;
-
-        node.component.setMonitorData(node, this.next);
-    }
 }
 
 // Change Actions
@@ -135,7 +91,7 @@ export class DragNodeAction extends NodeChangeAction {
     isUIEvent() { return true; }
 
     async undo() {
-        let node = getOperatorByID(this.nodeID);
+        let node = PipelineService.getOperatorByID(this.nodeID);
         if(node == null) return;
 
         this.editor.view.nodes.get(node).translate(...this.prev);
@@ -143,7 +99,7 @@ export class DragNodeAction extends NodeChangeAction {
     }
 
     async redo() {
-        let node = getOperatorByID(this.nodeID);
+        let node = PipelineService.getOperatorByID(this.nodeID);
         if(node == null) return;
 
         this.editor.view.nodes.get(node).translate(...this.new);
@@ -167,25 +123,25 @@ export class NodeParamChangeAction extends NodeChangeAction {
     }
 
     async undo() {
-        let node = getOperatorByID(this.nodeID);
+        let node = PipelineService.getOperatorByID(this.nodeID);
         if(node == null) return;
 
         let ctrl = node.controls.get(this.ctrlKey);
         if(ctrl == null) return;
 
         ctrl.setValue(this.prev);
-        node.component.onControlValueChanged(ctrl, node, this.new);  //To trigger changes in operator (pipeline update)
+        node.component.onControlValueChanged(ctrl, node, this.new);  //To trigger changes in operator (pipelineState update)
     }
 
     async redo() {
-        let node = getOperatorByID(this.nodeID);
+        let node = PipelineService.getOperatorByID(this.nodeID);
         if(node == null) return;
 
         let ctrl = node.controls.get(this.ctrlKey);
         if(ctrl == null) return;
 
         ctrl.setValue(this.new);
-        node.component.onControlValueChanged(ctrl, node, this.prev);  //To trigger changes in operator (pipeline update)
+        node.component.onControlValueChanged(ctrl, node, this.prev);  //To trigger changes in operator (pipelineState update)
     }
 
     update(node) {
@@ -206,14 +162,14 @@ export class NodeNameChangeAction extends NodeChangeAction {
     isUIEvent() { return true; }
 
     async undo() {
-        let node = getOperatorByID(this.nodeID);
+        let node = PipelineService.getOperatorByID(this.nodeID);
         if(node == null) return;
 
         node.viewName = this.prev;
     }
 
     async redo() {
-        let node = getOperatorByID(this.nodeID);
+        let node = PipelineService.getOperatorByID(this.nodeID);
         if(node == null) return;
 
         node.viewName = this.new;
@@ -236,7 +192,7 @@ export class NodeSocketNameChangeAction extends NodeChangeAction {
     isUIEvent() { return true; }
 
     async undo() {
-        let node = getOperatorByID(this.nodeID);
+        let node = PipelineService.getOperatorByID(this.nodeID);
         if(node == null) return;
 
         let socket = node.component.getSocketByKey(node, this.key);
@@ -248,7 +204,7 @@ export class NodeSocketNameChangeAction extends NodeChangeAction {
     }
 
     async redo() {
-        let node = getOperatorByID(this.nodeID);
+        let node = PipelineService.getOperatorByID(this.nodeID);
         if(node == null) return;
 
         let socket = node.component.getSocketByKey(node, this.key);
@@ -275,7 +231,7 @@ export class NodeResizeChangeAction extends NodeChangeAction {
     isUIEvent() { return true; }
 
     async undo() {
-        let node = getOperatorByID(this.nodeID);
+        let node = PipelineService.getOperatorByID(this.nodeID);
         if (node == null) return;
 
         for(let r of this.prev) {
@@ -286,7 +242,7 @@ export class NodeResizeChangeAction extends NodeChangeAction {
     }
 
     async redo() {
-        let node = getOperatorByID(this.nodeID);
+        let node = PipelineService.getOperatorByID(this.nodeID);
         if (node == null) return;
 
         for(let r of this.new) {

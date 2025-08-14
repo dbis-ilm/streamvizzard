@@ -9,22 +9,12 @@ export default class _UDF extends Component {
     }
 
     builder(node) {
-        node.code = new CodeControl(node, 'code', false, "return True");
+        node.code = new CodeControl(node, 'code', false, CodeControl.CodeType.FILTER, "return input[0] is not None");
 
         return this.onBuilderInitialized(node,
             new Display(node),
             [{name: "Any", socket: anySocket}],
             [{name: "Any", socket: anySocket}],
             [node.code]);
-    }
-
-    getData(node) {
-        return {
-            code: node.code.getValue()
-        };
-    }
-
-    setData(node, data) {
-        node.code.setValue(data.code);
     }
 }

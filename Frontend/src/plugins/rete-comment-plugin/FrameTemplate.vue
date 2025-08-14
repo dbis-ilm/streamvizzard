@@ -2,7 +2,7 @@
 <div class="frame-comment">
   <div class="ctrlRow">
     <!--<span ref="cp" class="colorPicker"></span>-->
-    <div style="height: 100%;"><input ref="nameInput" type="text" :value="frame.text" @change="onNameChange($event)" class="nameInput mouseEventBlocker"></div>
+    <div style="height: 100%;"><input ref="nameInput" type="text" :value="frame.text" @change="onNameChange($event)" class="nameInput editorInput"></div>
     <div style="right: -6px; top: -6px; position:absolute;">
       <i ref="collapseIcon" class="ctrlIcon bi bi-eye" title="Collapse / Expand all Nodes" @click="onCollapse()"></i>
       <i class="ctrlIcon bi bi-x-circle" title="Remove Group" @click="onRemove()"></i>
@@ -69,10 +69,10 @@ export default {
       autoHide: true,
       handles: "all",
       start: function() {
-        el.addClass("mouseEventBlocker");
+        el.addClass("editorInput");
       },
       stop: function() {
-        el.removeClass("mouseEventBlocker");
+        el.removeClass("editorInput");
 
         thisEl.frame.afterSizeChangedFinished();
       },

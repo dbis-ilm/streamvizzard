@@ -2,7 +2,7 @@ import json
 from typing import Optional
 
 from spe.pipeline.operators.operator import Operator
-from spe.runtime.structures.tuple import Tuple
+from spe.common.tuple import Tuple
 
 
 class ToFloat(Operator):
