@@ -1,6 +1,7 @@
 # Compiler / Pipeline Generator - Tutorial & Evaluation
 
 This file contains detailed step-by-step instructions to execute and evaluate the pipeline generator for various example data processing scenarios, targeting Apache Flink as the execution environment.
+Please refer to the example [YouTube](https://www.youtube.com/watch?v=tQhh1SGM6tw) video for additional illustration of the generation process.
 
 In addition, Flink and Kafka docker files are provided to quickly start a custom Flink cluster with configured Kafka broker to validate the execution of the generated pipeline files.
 

@@ -20,12 +20,7 @@ class FileSink(Sink):
         self._file: Optional[TextIO] = None
 
     def setData(self, data: Dict):
-        changed = self.path != data["path"]
-
         self.path = data["path"]
-
-        if changed:
-            self._openFile()
 
     def getData(self) -> dict:
         return {"path": self.path}

@@ -1,7 +1,10 @@
 # StreamVizzard v0.9.5
 
 StreamVizzard ist an interactive and explorative stream processing editor 
-written in Python, designed to simplify the pipeline development process.
+written in Python, designed to simplify the pipeline development process. 
+The system is divided into a [Frontend](frontend/readme.md), that is responsible for user interaction
+and visualization, and a [Backend](backend/readme.md), that brings its own custom stream processing engine
+for execution and modification of the pipeline.
 
 Please note that StreamVizzard is currently in active development.
 Some features might not yet be completed or may be subject to future changes.
@@ -28,14 +31,6 @@ to any previous state in the execution to review the pipeline behavior.
 StreamVizzard comes with an integrated pipeline generator that allows to transform the pipelines 
 created within the editor into various different representation for export, such as PyFlink.
 
-## Project Structure
-
-StreamVizzard is divided into a [Frontend](frontend/readme.md), that is responsible for user interaction
-and visualization, and a [Backend](backend/readme.md), that brings its own custom stream processing engine
-for execution and modification of the pipeline.
-
-The [Examples](examples/readme.md) folder contains various pipeline configurations and supplementary files for demonstration and evaluation purposes.
-
 ## Installation
 
 The simplest way to run the StreamVizzard system is to build a **docker** container based on the provided [docker-compose](docker-compose.yml) file.
@@ -57,6 +52,12 @@ For quick playarounds, the `Base -> Sources -> Random Data` source can be added 
 The most common operator type are user-defined functions, which allow to enter arbitrary Python code to process the incoming data tuples.
 
 After setting up a first pipeline, the execution can be started from the interface, which will execute the constructed pipeline using the internal stream processing engine of the backend.
+
+## Examples & Demonstrations
+
+An [Examples](examples/readme.md) folder contains various pipeline configurations and supplementary files for demonstration and evaluation purposes.
+
+An illustration of the full pipeline development and generation workflow is available as a short (4min) [YouTube](https://www.youtube.com/watch?v=tQhh1SGM6tw) video.
 
 ## Publications
 

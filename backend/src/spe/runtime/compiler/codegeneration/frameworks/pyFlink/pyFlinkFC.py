@@ -318,6 +318,14 @@ class PyFlinkFC(FrameworkCompiler):
 
                     dependencies.append(otherOp.id)
 
+            if stream1Op is None or stream2Op is None:
+                if stream1Op is None and stream2Op is None:  # Both inputs empty -> skip join completely
+                    continue
+                else:  # Only one input is set -> can't join
+                    op.operator.onExecutionError("Can't create join connection if one input operator is missing!")
+
+                    return False
+
             self._opDependenciesMapping[newOpID] = dependencies
 
             # Register this new join as an input ds for the actual operator
