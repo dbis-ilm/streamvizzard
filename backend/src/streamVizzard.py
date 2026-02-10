@@ -5,7 +5,7 @@ import pathlib
 import threading
 from typing import TYPE_CHECKING, List, Optional, Callable
 
-from config import Config, NETWORKING_SOCKET_PORT, NETWORKING_SERVER_PORT
+from config import Config, NETWORKING_SOCKET_PORT, NETWORKING_SERVER_PORT, VERSION
 from utils.utils import BColors, isWindowsOS, parseBool
 
 if TYPE_CHECKING:
@@ -36,7 +36,7 @@ class StreamVizzard:
 
             return
 
-        print("  _____  _                             __      __ _                           _ \r\n / ____|| |                            \\ \\    / /(_)                         | |\r\n| (___  | |_  _ __  ___   __ _  _ __ ___\\ \\  / /  _  ____ ____ __ _  _ __  __| |\r\n \\___ \\ | __|| \'__|/ _ \\ / _` || \'_ ` _ \\\\ \\/ /  | ||_  /|_  // _` || \'__|/ _` |\r\n ____) || |_ | |  |  __/| (_| || | | | | |\\  /   | | / /  / /| (_| || |  | (_| |\r\n|_____/  \\__||_|   \\___| \\__,_||_| |_| |_| \\/    |_|/___|/___|\\__,_||_|   \\__,_|\r\n                                                                                ")
+        print(f"  _____  _                             __      __ _                           _ \r\n / ____|| |                            \\ \\    / /(_)                         | |\r\n| (___  | |_  _ __  ___   __ _  _ __ ___\\ \\  / /  _  ____ ____ __ _  _ __  __| |\r\n \\___ \\ | __|| \'__|/ _ \\ / _` || \'_ ` _ \\\\ \\/ /  | ||_  /|_  // _` || \'__|/ _` |\r\n ____) || |_ | |  |  __/| (_| || | | | | |\\  /   | | / /  / /| (_| || |  | (_| |\r\n|_____/  \\__||_|   \\___| \\__,_||_| |_| |_| \\/    |_|/___|/___|\\__,_||_|   \\__,_|v{VERSION}\r\n                                                                                ")
         print("Starting system...")
 
         if isWindowsOS():

@@ -21,18 +21,8 @@ A CLI tool can be accessed in [cli.py](src/cli.py).
 
 For docker setups, the cli can be reached with docker exec -it svbackend svcli
 
-| Command       | Description                                                  | Parameter                                                                                                      |
-|---------------|--------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------|
-| startPipeline | Executes a given pipeline                                    | **path** to pipeline save file<br>**options** as json object of [configuration params](#startpipeline-options) |
-| stopPipeline  | Stops the currently running pipeline                         | -                                                                                                              |
-| analyzeCostModels | Calculates costModel for the defined operator configurations | **storagePath** to store the calculated costModels and operator execution recordings                           |
-
-#### StartPipeline Options
-
-```json
-{
-  "monitor": {
-    "enabled": true, // Receive monitoring data over socket connection
-    "trackStats": true // Track and store pipeline execution stats
-  }
-}
+| Command       | Description                                                  | Parameter                                                                            |
+|---------------|--------------------------------------------------------------|--------------------------------------------------------------------------------------|
+| startPipeline | Executes a given pipeline                                    | **path** to pipeline save file<br>*See additional options in help command*           |
+| stopPipeline  | Stops the currently running pipeline                         | -                                                                                    |
+| analyzeCostModels | Calculates costModel for the defined operator configurations | **storagePath** to store the calculated costModels and operator execution recordings |

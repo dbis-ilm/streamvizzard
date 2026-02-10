@@ -1,27 +1,58 @@
 from __future__ import annotations
-from typing import Dict, List, Iterable, Set
+from typing import Dict, List, Iterable, Set, Optional, TYPE_CHECKING
 
 from spe.runtime.compiler.definitions.compileDefinitions import CompileFramework
 from spe.runtime.compiler.placement.opTargetCatalog import OpTargetOption, OpTargetCatalog
 
-# Avg estimations for considering network latency. Future Work: Could also be exposed to the user
+if TYPE_CHECKING:
+    from spe.runtime.compiler.placement.frameworkAdvisor.frameworkAdvisor import FrameworkAdvisor
+
+# Avg estimations for considering network latency. Future Work: Exposed values
 # Future Work: Calc transfer in batches in general
 
 AVG_BATCH_SIZE = 50_000  # bytes
 AVG_FLUSH_INTERVAL = 0.1  # s [every 100ms]
 
 
-def estimateCommunicationTime(avgDataSize: float, avgDataRate: float, avgNetworkSpeed: float, avgNetworkLatency: float):
-    transferTime = avgDataSize / avgNetworkSpeed
+class DataExchangeOverhead:
+    def __init__(self, latency: float = 0, transfer: float = 0, serialization: float = 0):
+        self.latency = latency
+        self.transfer = transfer
+        self.serialization = serialization
 
-    if avgDataRate == 0 or avgDataSize == 0:
+    def add(self, other: DataExchangeOverhead) -> DataExchangeOverhead:
+        self.latency += other.latency
+        self.transfer += other.transfer
+        self.serialization += other.serialization
+
+        return self
+
+    def multiply(self, val: float) -> DataExchangeOverhead:
+        self.latency *= val
+        self.transfer *= val
+        self.serialization *= val
+
+        return self
+
+    def getTotal(self) -> float:
+        return self.latency + self.transfer + self.serialization
+
+
+def estimateCommunicationTime(dataSizePerElm: float, elmRate: float, serializationTime: float,
+                              avgNetworkSpeed: float, avgNetworkLatency: float,
+                              batchSize: int = AVG_BATCH_SIZE, flushInterval: float = AVG_FLUSH_INTERVAL) -> DataExchangeOverhead:
+    # ElmSize: bytes, elmRate: elm/s, serializationTime: s, BatchSize: bytes, FlushInterval: seconds
+
+    transferTime = dataSizePerElm / avgNetworkSpeed
+
+    if elmRate == 0 or dataSizePerElm == 0:
         latency = 0
     else:
-        tuplesPerBatch = min(AVG_BATCH_SIZE / avgDataSize, avgDataRate * AVG_FLUSH_INTERVAL)
+        tuplesPerBatch = min(batchSize / dataSizePerElm, elmRate * flushInterval)
 
         latency = avgNetworkLatency / tuplesPerBatch
 
-    return transferTime + latency
+    return DataExchangeOverhead(latency, transferTime, serializationTime)
 
 
 class TargetChain:
@@ -33,7 +64,8 @@ class TargetChain:
         self.targets.extend(other.targets)
 
 
-def findTargetChains(topologicalCats: Iterable[OpTargetCatalog]) -> List[TargetChain]:
+def findTargetChains(topologicalCats: Iterable[OpTargetCatalog],
+                     advisor: Dict[CompileFramework, Optional[FrameworkAdvisor]]) -> List[TargetChain]:
     """ Finds chains of adjacent targets with same framework/language/computeMode """
 
     chainLookup: Dict[OpTargetOption, TargetChain] = dict()
@@ -52,7 +84,8 @@ def findTargetChains(topologicalCats: Iterable[OpTargetCatalog]) -> List[TargetC
 
             if ((neighbourOption.target.framework == option.target.framework) and
                     (neighbourOption.target.language == option.target.language) and
-                    (neighbourOption.target.computeMode == option.target.computeMode)):
+                    (neighbourOption.target.computeMode == option.target.computeMode) and
+                    (advisor[option.target.framework].adviceCanChain(option, neighbourOption))):
 
                 # Same chain
 

@@ -19,8 +19,8 @@
 import {makeGenericResizable} from "@/scripts/tools/Utils";
 import $ from "jquery";
 import {HistoryGraphDisplayElementType} from "@/components/features/debugger/HistoryGraph.vue";
-import {DataExportService} from "@/scripts/services/dataExport/DataExportService";
-import {PipelineService} from "@/scripts/services/pipelineState/PipelineService";
+import {Services} from "@/scripts/services/Services";
+import {SvInstance} from "@/scripts/StreamVizzard";
 
 const ProvQueryTarget = {
   BEST_BRANCH: {
@@ -114,19 +114,19 @@ function createCondOpCmd(condition, cmdID, cmdTitle="Op <b>$VAL</b>") {
 
     options.push({"id": "null", "text": "Select Operator"});
 
-    for (let op of PipelineService.getAllOperators()) options.push({"id": op.id, "text": op.viewName + "[" + op.id + "]"});
+    for (let op of SvInstance.pipeline.operators) options.push({"id": op.id, "text": op.name + "[" + op.id + "]"});
 
     createDropdownQueryCmd(container, options, function (event) {
       if(event.target.value === "null") return;
 
       let opID = parseInt(event.target.value);
-      let op = PipelineService.getOperatorByID(opID);
+      let op = SvInstance.pipeline.getOperatorByID(opID);
 
-      queryCmd.applyData(opID, cmdTitle.replace("$VAL", op.viewName + "[" + opID + "]"), true);
+      queryCmd.applyData(opID, cmdTitle.replace("$VAL", op.name + "[" + opID + "]"), true);
     });
   }, function(queryCmd, opID) {
-    let op = PipelineService.getOperatorByID(opID);
-    queryCmd.applyData(opID, cmdTitle.replace("$VAL", op.viewName + "[" + opID + "]"), true);
+    let op = SvInstance.pipeline.getOperatorByID(opID);
+    queryCmd.applyData(opID, cmdTitle.replace("$VAL", op.name + "[" + opID + "]"), true);
   });
 }
 
@@ -140,8 +140,8 @@ function createCondOpTargetTypeCmd(condition, cmdID, limitTargetTypes=null, cmdT
 
         let opCmd = condition.getCmdByType(QueryConditionCmdTypes.OP);
 
-        let op = PipelineService.getOperatorByID(opCmd.value);
-        let params = op.component.getData(op);
+        let op = SvInstance.pipeline.getOperatorByID(opCmd.value);
+        let params = op.getParamValues();
 
         if (params == null || params.length === 0) continue;
       }
@@ -158,28 +158,28 @@ function createCondOpTargetTypeCmd(condition, cmdID, limitTargetTypes=null, cmdT
 function createCondOpTargetCmd(condition, cmdID) {
   return new ProvQueryCmd(condition, cmdID, QueryConditionCmdTypes.OP_TARGET, "Select Target", function (queryCmd, container) {
     let opCmd = condition.getCmdByType(QueryConditionCmdTypes.OP);
-    let op = PipelineService.getOperatorByID(opCmd.value);
+    let op = SvInstance.pipeline.getOperatorByID(opCmd.value);
 
     let targetTypeCmd = condition.getCmdByType(QueryConditionCmdTypes.OP_TARGET_TYPE);
 
     if(targetTypeCmd.value === ConditionOpTargetTypes.METRIC) {
       for(let k in ConditionOpMetricTypes) {
         if(ConditionOpMetricTypes[k] === ConditionOpMetricTypes.THROUGHPUT) { // One TP element for each output
-          for(let [,v] of op.outputs.entries()) {
-            for(let con of v.connections) {
+          for(let output of op.outputs) {
+            for(let con of output.connections) {
               createTextQueryCmd(container, ConditionOpMetricTypes[k].text + " (Con " + con.id + ")", function() {
                 queryCmd.applyData(ConditionOpMetricTypes[k].key + "_" + con.id, "<b>" + ConditionOpMetricTypes[k].text + " (Out " + con.id + ")</b>");
-              }, "Throughput of out connection " + con.id + " from socket " + v.name + " to socket " + con.input.name + " of op " + con.input.node.viewName);
+              }, "Throughput of out connection " + con.id + " from socket " + output.name + " to socket " + con.input.name + " of op " + con.input.operator.name);
             }
           }
         } else if(ConditionOpMetricTypes[k] === ConditionOpMetricTypes.MESSAGE_Q_SIZE) { // One QSize element for each input
           let i = 0;
 
-          for(let [,v] of op.inputs.entries()) {
+          for(let input of op.inputs) {
             let idx = i;
             createTextQueryCmd(container, ConditionOpMetricTypes[k].text + " (In " + (idx + 1) + ")", function() {
               queryCmd.applyData(ConditionOpMetricTypes[k].key + "_" + idx, "<b>" + ConditionOpMetricTypes[k].text + " (In " + (idx + 1) + ")</b>");
-            }, "MessageQueueSize of in socket nr. " + (idx + 1) + " with name " + v.name);
+            }, "MessageQueueSize of in socket nr. " + (idx + 1) + " with name " + input.name);
 
             i += 1;
           }
@@ -190,7 +190,7 @@ function createCondOpTargetCmd(condition, cmdID) {
         }
       }
     } else if(targetTypeCmd.value === ConditionOpTargetTypes.PARAM) {
-      let params = op.component.getData(op);
+      let params = op.getParamValues();
 
       for(let k in params) {
         createTextQueryCmd(container, k, function() {
@@ -1016,7 +1016,7 @@ export default {
 
       let query = this.currentQuery.getQuery();
 
-      this.$emit("executeQuery", query);
+      this.$streamvizzard.debugger.executeProvQuery(query);
 
       this.executingQuery = true;
 
@@ -1057,7 +1057,7 @@ export default {
       if(e.key === "Escape") ths.close();
     });
 
-    DataExportService.registerDataExporter("provInspectorData",
+    Services.DataExporter.registerDataExporter("provInspectorData",
         function() { return ths.currentQuery.exportQuery(); },
         function(data) { ths.currentQuery.importQuery(ths, data); });
   }

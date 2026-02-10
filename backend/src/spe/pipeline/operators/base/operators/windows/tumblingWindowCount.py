@@ -7,6 +7,7 @@ from spe.runtime.compiler.definitions.compileDefinitions import CompileFramework
     CompileParallelism
 from spe.runtime.compiler.definitions.compileOpFunction import CodeTemplateCOF
 from spe.runtime.compiler.definitions.compileOpSpecs import CompileOpSpecs
+from spe.runtime.compiler.opCompileConfig import OpCompileConfig
 from spe.runtime.debugger.debuggingUtils import retrieveStoredDTRef
 from spe.common.tuple import Tuple
 
@@ -73,15 +74,14 @@ class TumblingWindowCount(WindowOperator):
         return inTp / self.value
 
     def getCompileSpecs(self) -> List[CompileOpSpecs]:
-        # window_all for non-keyed streams, window else
-        def getPyFlinkCode(compileConfig):
+        def getPyFlinkCode(cfg: OpCompileConfig):
             from spe.runtime.compiler.codegeneration.frameworks.pyFlink.pyFlinkCodeTemplate import PyFlinkCodeTemplate
 
             pyFlinkCode = PyFlinkCodeTemplate({
                 PyFlinkCodeTemplate.Section.IMPORTS: """
             from pyflink.datastream.window import CountTumblingWindowAssigner""",
-                PyFlinkCodeTemplate.Section.ASSIGNMENTS: f"""
-            $inDS.window_all(CountTumblingWindowAssigner.of({self.value}))"""})  # Currently only for non-keyed streams
+                PyFlinkCodeTemplate.Section.ASSIGNMENTS:
+                    self._getPyFlinkCompileAssignment(f"CountTumblingWindowAssigner.of({self.value})", cfg.parallelismCount)})
 
             return pyFlinkCode
 

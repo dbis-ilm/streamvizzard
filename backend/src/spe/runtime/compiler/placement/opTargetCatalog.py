@@ -91,7 +91,7 @@ class OpTargetOptionStats:
 
     @property
     def estTotalExTime(self):
-        """ Total single-node execution time per tuple, including communication overhead. """
+        """ Total single-node load (calculation time + transfer time). """
 
         return self.estCalcTime + self.estTransferTime
 
@@ -124,6 +124,7 @@ class OpTargetOptionStats:
 
             optionStats.totalOutDataSize = stats.outDataSizeStats.average
             optionStats.inDataSize = stats.inDataSizeStats.average
+
             optionStats.totalOutDataSerialization = stats.outDataSerialization.average
             optionStats.totalOutDataDeserialization = stats.outDataDeserialization.average
             optionStats.totalInDataSerialization = stats.inDataSerialization.average

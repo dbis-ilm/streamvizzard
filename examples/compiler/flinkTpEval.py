@@ -156,21 +156,11 @@ def getFileStats(filePath: str):
 
 
 def getElmsToWrite(data):
-    lines = []
+    if maxResultVals is not None:
+        idx = np.linspace(0, len(data) - 1, maxResultVals, dtype=int)
+        return [data[i] for i in idx]
 
-    maxElms = max(1, (maxResultVals if maxResultVals is not None else len(data)) - 1)
-
-    writeEvery = max(1, int(len(data) / maxElms))
-
-    for i in range(0, len(data), writeEvery):
-        lines.append(data[i])
-
-        if len(lines) >= maxElms:
-            break
-
-    lines.append(data[-1])  # Include last val
-
-    return lines
+    return data
 
 
 def main():
@@ -298,25 +288,26 @@ def main():
 
     # Plot data
 
-    if plotData:
-        fileName = os.path.splitext(os.path.basename(inputDataPath))[0]
+    if plotData and len(reducedData) > 0:
+        if isinstance(reducedData[0], numbers.Number):
+            plt.plot([i for i in reducedDataIdx], reducedData, marker='o', label="Vals")
 
-        plt.plot([i for i in reducedDataIdx], reducedData, marker='o', label=fileName)
+            if otherTps is not None:
+                for idx in range(len(otherVals)):
+                    otherFileName = os.path.splitext(os.path.basename(compareWithDataPaths[idx]))[0]
+                    otherReduced = getElmsToWrite(otherVals[idx])
+                    otherReducedIdx = getElmsToWrite([i for i in range(len(otherVals[idx]))])
 
-        if otherTps is not None:
-            for idx in range(len(otherVals)):
-                otherFileName = os.path.splitext(os.path.basename(compareWithDataPaths[idx]))[0]
-                otherReduced = getElmsToWrite(otherVals[idx])
-                otherReducedIdx = getElmsToWrite([i for i in range(len(otherVals[idx]))])
+                    plt.plot([i for i in otherReducedIdx], otherReduced, marker='x', label=otherFileName)
 
-                plt.plot([i for i in otherReducedIdx], otherReduced, marker='x', label=otherFileName)
-
-        plt.xlabel('Tuple Nr.')
-        plt.ylabel('Data')
-        plt.title('Pipeline Execution Data Plot')
-        plt.grid(True)
-        plt.legend()
-        plt.show()
+            plt.xlabel('Tuple Nr.')
+            plt.ylabel('Data')
+            plt.title('Pipeline Execution Data Plot')
+            plt.grid(True)
+            plt.legend()
+            plt.show()
+        else:
+            print("Can't plot data since data is not a numeric value!")
 
 
 if __name__ == "__main__":

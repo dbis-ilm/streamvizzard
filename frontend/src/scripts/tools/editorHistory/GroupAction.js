@@ -1,162 +1,140 @@
 import HistoryAction from "@/scripts/tools/editorHistory/HistoryAction";
-import {globalCommentManager} from "@/plugins/rete-comment-plugin";
+import {SvInstance} from "@/scripts/StreamVizzard";
 
 class GroupAction extends HistoryAction {
-    constructor(editor, group) {
-        super(editor);
+    /** @param {Group} group **/
+    constructor(group) {
+        super();
 
-        this.groupID = group.getID();
-
-        this.removedGroup = group; //For tracking the old group data to restore
+        this.groupID = group.id;
+        this.prevGroupData = group.exportSaveData();
     }
 
     isUIEvent() { return true; }
 
-    createGroup() {
-        let group = this.removedGroup;
+    addOperator(opID) {
+        let op = SvInstance.pipeline.getOperatorByID(opID);
+        if(op == null) return false;
 
-        let newGroup = globalCommentManager.addFrameComment(group.text, [group.x, group.y],
-            group.links, group.width, group.height, group.collapsed, false);
-        newGroup.updateID(this.groupID);
+        // If op was last op, group was removed -> need to restore first
+        if(this.getGroup() == null) SvInstance.pipeline.createGroupFromSaveData(this.prevGroupData, true);
+
+        return this.getGroup().addOperator(op);
     }
 
-    removeGroup() {
-        let group = this.getGroup();
-        this.removedGroup = group;
+    removeOperator(opID) {
+        let op = SvInstance.pipeline.getOperatorByID(opID);
+        if(op == null) return false;
 
-        this.links = group.links;
-        this.editor.trigger('removecomment', {comment: group});
+        return this.getGroup().removeOperator(op); // Might remove group if its last op
     }
 
     getGroup() {
-        return globalCommentManager.getComment(this.groupID);
+        return SvInstance.pipeline.getGroupById(this.groupID);
     }
 }
 
-export class AddGroupAction extends GroupAction {
-    constructor(editor, group) {
-        super(editor, group);
+export class GroupOperatorAdded extends GroupAction {
+    /** @param {Group} group
+     *  @param {SvOperator} op **/
+    constructor(group, op) {
+        super(group);
+
+        this.opID = op.id;
     }
 
     async undo() {
-        this.removeGroup();
+        return this.removeOperator(this.opID);
     }
 
     async redo() {
-        this.createGroup(this.group);
+        return this.addOperator(this.opID);
     }
 }
 
-export class RemoveGroupAction extends GroupAction {
-    constructor(editor, group) {
-        super(editor, group);
+export class GroupOperatorRemoved extends GroupAction {
+    /** @param {Group} group
+     *  @param {SvOperator} op **/
+    constructor(group, op) {
+        super(group);
+
+        this.opID = op.id;
     }
 
     async undo() {
-        this.createGroup();
+        return this.addOperator(this.opID);
     }
 
     async redo() {
-        this.removeGroup();
+        return this.removeOperator(this.opID);
     }
 }
 
-export class CollapseGroupAction extends GroupAction {
-    constructor(editor, group, collapse) {
-        super(editor, group);
+export class GroupNameChangeAction extends GroupAction {
+    /** @param {Group} group
+     * @param {string} prev **/
+    constructor(group, prev) {
+        super(group);
 
-        this.collapsed = collapse;
+        this.prev = prev;
+        this.new = group.title;
     }
 
     async undo() {
-        this.getGroup().instance.setCollapsed(!this.collapsed, true);
+        let group = this.getGroup();
+        let currentTitle = group.title;
+
+        group.title = this.prev;
+
+        return group.title !== currentTitle;
     }
 
     async redo() {
-        this.getGroup().instance.setCollapsed(this.collapsed, true);
+        let group = this.getGroup();
+        let currentTitle = group.title;
+
+        group.title = this.new;
+
+        return group.title !== currentTitle;
     }
 }
 
 // Change Actions
 
 export class GroupChangeAction extends GroupAction {
-    constructor(editor, group) {
-        super(editor, group);
-
-        this.closed = false;
+    /** @param {Group} group **/
+    constructor(group) {
+        super(group);
 
         this.prev = null;
         this.new = null;
     }
 }
 
-export class DragGroupAction extends GroupChangeAction {
-    constructor(editor, group, prev) {
-        super(editor, group);
+// Future Work: When reverting a group move, reroute pins might be not "released" from the group and moved as well
+// since groups don't track which pins belong to them and solely determine them by bounding box calculations.
 
-        this.prev = prev;
+export class GroupMoveAction extends GroupChangeAction {
+    /** @param {Group} group
+     * @param {Object} prev **/
+    constructor(group, prev) {
+        super(group);
+
+        this.prev = [prev.x, prev.y];
         this.new = [group.x, group.y];
     }
 
     async undo() {
-        this.getGroup().translate(this.prev[0], this.prev[1]);
+        return this.getGroup().moveGroup(this.prev[0], this.prev[1]);
     }
 
     async redo() {
-        this.getGroup().translate(this.new[0], this.new[1]);
+        return this.getGroup().moveGroup(this.new[0], this.new[1]);
     }
 
     update() {
         let group = this.getGroup();
 
         this.new = [group.x, group.y];
-    }
-}
-
-export class GroupNameChangeAction extends GroupChangeAction {
-    constructor(editor, group, prev) {
-        super(editor, group);
-
-        this.prev = prev;
-        this.new = group.text;
-    }
-
-    async undo() {
-        this.getGroup().text = this.prev;
-    }
-
-    async redo() {
-        this.getGroup().text = this.new;
-    }
-
-    update(group) {
-        this.new = group.text;
-    }
-}
-
-export class GroupSizeChangeAction extends GroupChangeAction {
-    constructor(editor, group, prev) {
-        super(editor, group);
-
-        this.prev = prev;
-        this.new = [group.width, group.height];
-    }
-
-    async undo() {
-        let group = this.getGroup();
-
-        group.updateSize(this.prev[0], this.prev[1]);
-        group.afterSizeChangedFinished();
-    }
-
-    async redo() {
-        let group = this.getGroup();
-
-        group.updateSize(this.new[0], this.new[1]);
-        group.afterSizeChangedFinished();
-    }
-
-    update(group) {
-        this.new = [group.width, group.height];
     }
 }

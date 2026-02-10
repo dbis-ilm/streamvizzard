@@ -35,13 +35,13 @@
 <script>
 
 import FileSelect from "@/components/interface/elements/base/FileSelect.vue";
-import {NetworkService} from "@/scripts/services/network/NetworkService";
 import ButtonSec from "@/components/interface/elements/base/ButtonSec.vue";
 import SearchSelectList from "@/components/interface/elements/base/SearchSelectList.vue";
 import NotificationModal from "@/components/interface/elements/base/NotificationModal.vue";
 import SwitchSelection from "@/components/interface/elements/base/SwitchSelection.vue";
-import {PipelineService} from "@/scripts/services/pipelineState/PipelineService";
-import {DataExportService} from "@/scripts/services/dataExport/DataExportService";
+import {Services} from "@/scripts/services/Services";
+import {SvInstance} from "@/scripts/StreamVizzard";
+import {Modal, MODALS} from "@/scripts/interface/Interface";
 
 export default {
   name: 'StoragePipelineModal',
@@ -57,18 +57,19 @@ export default {
       selectedPipeline: "",
     }
   },
+
   methods: {
-    show (loadMode) {
+    show(loadMode) {
       this.loadMode = loadMode;
 
       this.selectedPipeline = "";
 
-      if(!this.loadMode) this.selectedPipeline = PipelineService.pipelineMetaData.getName();
+      if(!this.loadMode) this.selectedPipeline = SvInstance.pipeline.pipelineMetaData.getName();
 
       this.$modal.show('loadPipelineModal');
     },
 
-    hide () {
+    hide() {
       this.$modal.hide('loadPipelineModal');
     },
 
@@ -99,12 +100,12 @@ export default {
 
       this.errorMessage = "";
       this.loadingPipeline = true; // Sometimes DOM is not updated due to some weird Vue interaction with async?
-      PipelineService.pipelineMetaData.updateName(pipeline);
+      SvInstance.pipeline.pipelineMetaData.updateName(pipeline);
 
       let ths = this;
 
       setTimeout(function() {
-        NetworkService.requestStoredPipeline(pipeline).then(async function(loadedPipe) {
+        Services.Network.requestStoredPipeline(pipeline).then(async function(loadedPipe) {
           if(loadedPipe == null || loadedPipe.length === 0) {
             ths.errorMessage = "Pipeline couldn't be loaded!"
             ths.loadingPipeline = false;
@@ -119,7 +120,7 @@ export default {
 
     async _performPipelineLoad(loadedPipe) {
       try {
-        await DataExportService.loadSaveData(loadedPipe);
+        await Services.DataExporter.loadSaveData(loadedPipe);
 
         this.hide();
       } catch(err) {
@@ -149,9 +150,9 @@ export default {
     },
 
     _performPipelineSave() {
-      PipelineService.pipelineMetaData.updateName(this.selectedPipeline);
+      SvInstance.pipeline.pipelineMetaData.updateName(this.selectedPipeline);
 
-      let saveData = DataExportService.createSaveData();
+      let saveData = Services.DataExporter.createSaveData();
 
       if(!this.serverTarget) {
         //Export file
@@ -174,7 +175,7 @@ export default {
         let ths = this;
         this.loadingPipeline = true;
 
-        NetworkService.storePipeline({"name": this.selectedPipeline, "data": saveData}).then(function (res) {
+        Services.Network.storePipeline({"name": this.selectedPipeline, "data": saveData}).then(function (res) {
           ths.loadingPipeline = false;
 
           if(res) {
@@ -212,7 +213,7 @@ export default {
       let ths = this;
       let storageList = this.$refs.storageList;
 
-      NetworkService.deleteStoredPipeline(pipeline).then(function(res) {
+      Services.Network.deleteStoredPipeline(pipeline).then(function(res) {
         if(res != null) storageList.updateDataArray(storageList.dataArray.filter(v => v !== pipeline));
 
         ths.$modal.hide('storageConfirmModal');
@@ -230,7 +231,7 @@ export default {
 
         storageList.clearSearch();
 
-        NetworkService.listStoredPipelines().then(function(pipelines) {
+        Services.Network.listStoredPipelines().then(function(pipelines) {
           storageList.loading = false;
 
           if(pipelines == null) { // Server not connected
@@ -243,7 +244,12 @@ export default {
         });
       }
     }
+  },
+
+  mounted() {
+    this.$streamvizzard.interface.registerModal(new Modal(MODALS.STORE_PIPELINE, this.show, this.hide));
   }
+
 }
 </script>
 

@@ -19,16 +19,19 @@ class KafkaSink(Sink):
         self.topic = ""
         self.encoding = "utf-8"
         self.maxRequestSize = 1048588
+        self.linger = 5  # ms
 
         self._producer: Optional[KafkaProducer] = None
 
     def setData(self, data: Dict):
         changed = ((self.port != data["port"]) or (self.broker != data["broker"])
-                   or (self.topic != data["topic"]) or (self.maxRequestSize != data["maxRequestSize"]))
+                   or (self.topic != data["topic"]) or (self.maxRequestSize != data["maxRequestSize"])
+                   or (self.linger != data["linger"]))
 
         self.port = data["port"]
         self.broker = data["broker"]
         self.topic = data["topic"]
+        self.linger = data["linger"]
         self.maxRequestSize = data["maxRequestSize"]
 
         self.encoding = data["encoding"]
@@ -37,7 +40,7 @@ class KafkaSink(Sink):
             self._closeProducer()
 
     def getData(self) -> dict:
-        return {"port": self.port, "broker": self.broker, "topic": self.topic,
+        return {"port": self.port, "broker": self.broker, "topic": self.topic, "linger": self.linger,
                 "encoding": self.encoding, "maxRequestSize": self.maxRequestSize}
 
     def onRuntimeDestroy(self):
@@ -47,6 +50,7 @@ class KafkaSink(Sink):
 
     def _closeProducer(self):
         if self._producer is not None:
+            self._producer.flush(timeout=0.25)
             self._producer.close()
             self._producer = None
 
@@ -55,7 +59,9 @@ class KafkaSink(Sink):
             return
 
         try:
-            self._producer = KafkaProducer(bootstrap_servers=f"{self.broker}:{self.port}", max_request_size=self.maxRequestSize)
+            self._producer = KafkaProducer(bootstrap_servers=f"{self.broker}:{self.port}",
+                                           max_request_size=self.maxRequestSize,
+                                           linger_ms=self.linger)
         except Exception:
             self.onExecutionError()
 
@@ -70,8 +76,6 @@ class KafkaSink(Sink):
 
         try:
             self._producer.send(self.topic, value=dataToSend)
-
-            self._producer.flush()
 
             return self.createSinkTuple()
         except Exception:
@@ -90,6 +94,8 @@ class KafkaSink(Sink):
                 PyFlinkCodeTemplate.Section.FUNCTION_DECLARATION: f"""
             ks_{self.getUniqueName()} = KafkaSink.builder() \\
                 .set_bootstrap_servers("{self.broker}:{self.port}") \\
+                .set_property("linger.ms", "{self.linger}") \\
+                .set_property("max.request.size", "{self.maxRequestSize}") \\
                 .set_record_serializer(KafkaRecordSerializationSchema.builder()
                                        .set_topic("{self.topic}")
                                        .set_value_serialization_schema(SimpleStringSchema("{self.encoding}"))

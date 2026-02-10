@@ -26,69 +26,66 @@
 
 import SearchSelectList from "@/components/interface/elements/base/SearchSelectList.vue";
 import NotificationModal from "@/components/interface/elements/base/NotificationModal.vue";
-import $ from "jquery";
-import {system} from "@/main";
-import {createNode} from "rete-context-menu-plugin/src/utils";
-import {NetworkService} from "@/scripts/services/network/NetworkService";
-import {DataExportService} from "@/scripts/services/dataExport/DataExportService";
+import {Services} from "@/scripts/services/Services";
+import Vue from "vue";
+import {MODALS} from "@/scripts/interface/Interface";
 
-export default{
-  name: 'OperatorPresetBar',
+export default Vue.extend ({
   components: {NotificationModal, SearchSelectList},
+
   data() {
     return {
-      opened: false,
-
-      presetList: [], // Only loaded on start since this is high effort
-
-      draggedPreset: null,
-      currentDragElm: null,
-      elementToBeCreated: null,
+      /** @type {OperatorPreset|null}*/ draggedPreset: null,
+      /** @type {HTMLElement|null}*/ currentDragElm: null,
 
       catOpenState: null, // Stores the open/close state of the categories for convenience
     };
   },
-  methods: {
-    open() {
-      if(this.opened) return;
 
-      this.opened = true;
+  computed: {
+    opened() {
+      return this.$streamvizzard.interface.showOpPresetBar;
+    }
+  },
 
-      this.$nextTick(() => {
-        if(this.presetList.length === 0) this._fetchOperatorPresets();
+  watch: {
+    opened() {
+      if(this.opened) {
+        window.addEventListener("mousemove", this._onPresetMouseMove);
+        window.addEventListener("mouseup", this._onPresetMouseUp);
 
-        this.updateOperatorPresets(this.presetList);
-      });
-    },
+        this.$nextTick(() => {
+          if(Services.OpPresetService.presets.length === 0) {
+            this.$refs.opPresetList.loading = true;
+            this.$refs.opPresetList.errorMessage = "";
 
-    close() {
-      if(!this.opened) return;
+            // Fetches presets which triggers update callback
+            Services.OpPresetService.fetchPresets().then((presets) => {
+              if(!this.$refs.opPresetList) return; // Closed before finish
 
-      this.catOpenState = this.$refs.opPresetList.categories.map((elm) => {return {"name": elm.name, "show": elm.show}});
-      this.opened = false;
-    },
+              this.$refs.opPresetList.loading = false;
 
-    getPresetList() {
-      return this.presetList;
-    },
+              if(presets == null) this.$refs.opPresetList.errorMessage = "Couldn't load presets!";
+            });
 
-    updateOperatorPresets(configs) {
-      // Enrich data array with style class for background color
-      let finalDataArray = [];
-      for(let elm of configs) {
-        if(!this._fillPresetBgColor(elm)) continue;
+          } else this._updateOperatorPresets();
+        });
+      } else {
+        this.catOpenState = this.$refs.opPresetList.categories.map((elm) => {return {"name": elm.name, "show": elm.show}});
 
-        finalDataArray.push(elm);
+        window.removeEventListener("mousemove", this._onPresetMouseMove);
+        window.removeEventListener("mouseup", this._onPresetMouseUp);
       }
+    }
+  },
 
-      this.presetList = finalDataArray;
-
-      if(this.opened) this.$refs.opPresetList.updateDataArray(this.presetList, this.catOpenState);
+  methods: {
+    _updateOperatorPresets() {
+      if(this.opened) this.$refs.opPresetList.updateDataArray(Services.OpPresetService.presets, this.catOpenState);
     },
 
     _toggleWindow() {
-      if(this.opened) this.close();
-      else this.open();
+      this.$streamvizzard.interface.showOpPresetBar = !this.$streamvizzard.interface.showOpPresetBar;
     },
 
     _deletePreset(elm) {
@@ -97,70 +94,38 @@ export default{
     },
 
     _confirmDelete(elm) {
-      let ths = this;
-      let opPresetList = this.$refs.opPresetList;
+      Services.OpPresetService.deletePreset(elm.name).then((result) => {
+        if(result) this._updateOperatorPresets();
 
-      NetworkService.deleteStoredOperator(elm.name).then(function(res) {
-        if(res != null) ths.updateOperatorPresets(opPresetList.dataArray.filter(p => p.name !== elm.name));
-
-        ths.$modal.hide('opPresetConfirmModal');
-      })
-    },
-
-    _editPreset(elm) {
-      system.$refs.opPresetStoreModal.openEditModal(elm, this.getPresetList(), this.updateOperatorPresets);
-    },
-
-    _fillPresetBgColor(elm) {
-      let component = system.editor.components.get(elm['className']);
-
-      if(component == null) return false;
-
-      elm.style = 'background: ' + component.bgColor + '; border: var(--node-border); border-width: 1px;';
-
-      return true;
-    },
-
-    _fetchOperatorPresets() {
-      let ths = this;
-      this.$refs.opPresetList.loading = true;
-      this.$refs.opPresetList.errorMessage = "";
-
-      NetworkService.listStoredOperators().then(function(ops) {
-        ths.$refs.opPresetList.loading = false;
-
-        if(ops == null) {
-          ths.$refs.opPresetList.errorMessage = "Couldn't load presets!";
-
-          return;
-        }
-
-        ths.updateOperatorPresets(ops);
+        this.$modal.hide('opPresetConfirmModal');
       });
     },
 
-    // Drag-Drop-Functionality
+    _editPreset(elm) {
+      this.$streamvizzard.interface.openModal(MODALS.OP_PRESET_EDIT, elm);
+    },
 
+    // -------------------------------------------- Drag-Drop-Functionality --------------------------------------------
+
+    /** @param {MouseEvent} e
+     * @param {OperatorPreset} elm*/
     _onPresetMouseDown(e, elm) {
       if(e.buttons !== 1) return; // Only left click
 
       e.preventDefault();
       e.stopPropagation();
 
-      this.elementToBeCreated = null; // Reset in case we dropped on non-editor
-
       if(this.currentDragElm != null) this.currentDragElm.remove();
 
-      let zoom = system.editor.view.area.transform.k;
-      let width = elm.width * zoom;
-      let height = elm.height * zoom;
+      let width = elm.width * this.$streamvizzard.editor.scale;
+      let height = elm.height * this.$streamvizzard.editor.scale;
 
-      const component = system.editor.components.get(elm.className);
-      if(component == null) return;
+      const definition = this.$streamvizzard.modules.getOperatorDefinition(elm.saveData["definition"]);
+      if(definition == null) return;
 
       this.currentDragElm = document.createElement("div");
       this.currentDragElm.setAttribute("class", "opPresetDrag");
-      this.currentDragElm.style.background = component.bgColor;
+      this.currentDragElm.style.background = definition.bgColor;
       this.currentDragElm.style.top = (e.clientY - height/2) + "px";
       this.currentDragElm.style.left = (e.clientX - width/2) + "px";
       this.currentDragElm.style.width = width + "px";
@@ -171,72 +136,41 @@ export default{
     },
 
     _onPresetMouseMove(e) {
-      this.elementToBeCreated = null; // Reset in case we dropped on non-editor
+      if(this.currentDragElm == null) return;
 
-      if (this.currentDragElm != null) {
-        e.preventDefault();
-        e.stopPropagation();
+      e.preventDefault();
+      e.stopPropagation();
 
-        let zoom = system.editor.view.area.transform.k;
-        let width = this.draggedPreset.width * zoom;
-        let height = this.draggedPreset.height * zoom;
+      let zoom = this.$streamvizzard.editor.scale;
+      let width = this.draggedPreset.width * zoom;
+      let height = this.draggedPreset.height * zoom;
 
-        this.currentDragElm.style.top = (e.clientY - height/2) + "px";
-        this.currentDragElm.style.left = (e.clientX - width/2) + "px";
-      }
+      this.currentDragElm.style.top = (e.clientY - height/2) + "px";
+      this.currentDragElm.style.left = (e.clientX - width/2) + "px";
     },
 
     _onPresetMouseUp(e) {
-      if(this.currentDragElm != null) {
-        e.preventDefault();
-        e.stopPropagation();
+      if(this.currentDragElm == null) return;
 
-        this.currentDragElm.remove();
+      e.preventDefault();
+      e.stopPropagation();
 
-        // In case we dropped over editor we will trigger a mouseEnter and use this variable to create the elm
-        this.elementToBeCreated = this.draggedPreset;
-
-        this.currentDragElm = null;
-        this.draggedPreset = null;
+      if(this.$streamvizzard.editor.mouseOver) {
+        Services.OpPresetService.createOperatorFromPreset(this.draggedPreset, this.$streamvizzard.editor.mouseX, this.$streamvizzard.editor.mouseY);
       }
+
+      this.currentDragElm.remove();
+      this.currentDragElm = null;
+      this.draggedPreset = null;
     },
-
-    _onEditorMouseEnter(e) {
-      if(this.elementToBeCreated != null) {
-        let areaRect = system.editor.view.area.el.getBoundingClientRect();
-
-        let zoom = system.editor.view.area.transform.k;
-        let width = this.elementToBeCreated.width;
-        let height = this.elementToBeCreated.height;
-
-        let xPos = (e.clientX - areaRect.left) / zoom - width/2;
-        let yPos = (e.clientY - areaRect.top) / zoom - height/2;
-
-        this._createOpNode(this.elementToBeCreated, xPos, yPos);
-        this.elementToBeCreated = null;
-      }
-    },
-
-    async _createOpNode(elm, xPos, yPos) {
-      const component = system.editor.components.get(elm.className);
-
-      const node = await createNode(component, {x: xPos, y: yPos});
-
-      system.editor.addNode(node);
-
-      await DataExportService.loadOperatorFromSaveData(node, elm.saveData);
-    }
   },
 
   mounted() {
-    $(document).mousemove(this._onPresetMouseMove);
-    $(document).mouseup(this._onPresetMouseUp);
-
-    this.$nextTick(() => {
-      $(system.editor.view.area.container).mouseenter(this._onEditorMouseEnter);
-    });
+    Services.OpPresetService.onPresetsChangeCb = () => {
+      this._updateOperatorPresets();
+    };
   }
-}
+})
 
 </script>
 
@@ -300,7 +234,7 @@ export default{
   opacity: 0.75;
   border: var(--node-border);
   border-radius: var(--node-border-radius);
-  z-index: 10;
+  pointer-events: none;
 }
 
 .storeSearchList .listElm .searchListEditIcon {

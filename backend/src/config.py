@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 
+VERSION = "0.9.6"
 NETWORKING_SERVER_PORT = 8000
 NETWORKING_SOCKET_PORT = 8001
 
@@ -19,15 +20,16 @@ class Config:
 
         self.MONITORING_ENABLED = True
 
-        # Smooth factor [0,1] when calculating statistics for an operator [Exponential Moving Average] (0=low impact of new values)
-        self.MONITORING_OPERATOR_SMOOTH_FACTOR = 2 / (40 + 1)
+        # Smooth factor [0,1] when calculating statistics for an operator [Exponential Moving Average]
+        # The lower the value, the less impact of new values and the smoother [and slower] adaptations to changes
+        self.MONITORING_OPERATOR_SMOOTH_FACTOR = 0.25
+
+        # The size of the sliding window [seconds] to calculate the connection throughput
+        # The lower the window, the faster the reaction to significant tp changes, but also higher fluctuation
+        self.MONITORING_CONNECTION_THROUGHPUT_WINDOW = 2.5
 
         # At which rate [seconds] updates to the frontend monitor will be sent
         self.MONITORING_UPDATE_INTERVAL = 0.1
-
-        # How many elements of history are considered to calc statistics
-        # This influences how quickly changes in throughput are noticeable
-        self.MONITORING_CONNECTIONS_MAX_THROUGHPUT_ELEMENTS = 50
 
         self.MONITORING_TRACK_PIPELINE_STATS = True
 

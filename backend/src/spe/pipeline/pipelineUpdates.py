@@ -47,10 +47,10 @@ class PipelineUpdate(ABC):
             return OperatorAddedPU.parse(updateID, updateData)
         elif tp == "opRemoved":
             return OperatorRemovedPU.parse(updateID, updateData)
-        elif tp == "opDataUpdated":
-            return OperatorDataUpdatedPU.parse(updateID, updateData)
-        elif tp == "opMetaUpdated":
-            return OperatorMetaDataUpdatedPU.parse(updateID, updateData)
+        elif tp == "opParamsUpdated":
+            return OperatorParamsUpdatedPU.parse(updateID, updateData)
+        elif tp == "opConfigUpdated":
+            return OperatorConfigUpdatedPU.parse(updateID, updateData)
         elif tp == "conAdded":
             return ConnectionAddedPU.parse(updateID, updateData)
         elif tp == "conRemoved":
@@ -75,7 +75,7 @@ class OperatorAddedPU(PipelineUpdate):
         newOp = self.pipeline.fetchOperatorFromStorage(self.opID)
 
         if newOp is None:
-            newOp = PipelineManager.parseOperatorAndConnections(self.pipeline, self.opData, None)
+            newOp = PipelineManager.parseOperator(self.pipeline, self.opData)
             newOp.onRuntimeCreate(self.pipeline.getEventLoop())
         else:
             OperatorAddedPU.restoreOperator(self.pipeline, self.opID)
@@ -135,12 +135,11 @@ class OperatorRemovedPU(PipelineUpdate):
         return OperatorRemovedPU(updateID, data["opID"])
 
 
-class OperatorDataUpdatedPU(PipelineUpdate):
-    def __init__(self, updateID: int, opID: int, opUUID: str, opData: Dict, param: str):
+class OperatorParamsUpdatedPU(PipelineUpdate):
+    def __init__(self, updateID: int, opID: int, opData: Dict, param: str):
         super().__init__(updateID)
 
         self.opID = opID
-        self.opUUID = opUUID
         self.opData = opData
         self.param = param
         self._prevData = None
@@ -157,7 +156,6 @@ class OperatorDataUpdatedPU(PipelineUpdate):
         if op is not None:
             try:
                 op.setData(self.opData)
-                op.uuid = self.opUUID
             except Exception:
                 logging.log(logging.ERROR, traceback.format_exc())
 
@@ -170,16 +168,15 @@ class OperatorDataUpdatedPU(PipelineUpdate):
 
         try:
             op.setData(self._prevData)
-            # We currently do not undo uuid [not required]
         except Exception:
             logging.log(logging.ERROR, traceback.format_exc())
 
     @staticmethod
-    def parse(updateID: int, data: Dict) -> OperatorDataUpdatedPU:
-        return OperatorDataUpdatedPU(updateID, data["opID"], data["opUUID"], data["opData"], data["ctrlKey"])
+    def parse(updateID: int, data: Dict) -> OperatorParamsUpdatedPU:
+        return OperatorParamsUpdatedPU(updateID, data["opID"], data["opData"], data["param"])
 
 
-class OperatorMetaDataUpdatedPU(PipelineUpdate):
+class OperatorConfigUpdatedPU(PipelineUpdate):
     def __init__(self, updateID: int, opID: int, metaData: Dict):
         super().__init__(updateID)
 
@@ -203,8 +200,8 @@ class OperatorMetaDataUpdatedPU(PipelineUpdate):
         return False
 
     @staticmethod
-    def parse(updateID: int, data: Dict) -> OperatorMetaDataUpdatedPU:
-        return OperatorMetaDataUpdatedPU(updateID, data["opID"], data["metaData"])
+    def parse(updateID: int, data: Dict) -> OperatorConfigUpdatedPU:
+        return OperatorConfigUpdatedPU(updateID, data["opID"], data["metaData"])
 
 
 class ConnectionAddedPU(PipelineUpdate):

@@ -2,7 +2,6 @@ import json
 import time
 from typing import List
 
-from spe.common.timer import Timer
 from spe.pipeline.operators.source import Source
 from spe.runtime.compiler.codegeneration.frameworks.pyFlink.pyFlinkStatics import pyFlinkRateLimiterOpDef, \
     pyFlinkRateLimiterOpName
@@ -46,9 +45,6 @@ class TextFile(Source):
                 with open(self.path) as file:
                     currentPath = self.path
 
-                    startTime = Timer.currentRealTime()
-                    counter = 0
-
                     while line := file.readline():
                         if not self.isRunning() \
                                 or currentPath != self.path:
@@ -56,18 +52,13 @@ class TextFile(Source):
 
                         line = line.strip()
 
-                        if self.limitRate and self.rate > 0:
-                            # Compensates inaccuracies in sleeps by fixed produce 'clock'
-                            nextProduceTime = startTime + counter * (1.0 / self.rate)
-
-                            sleepDuration = nextProduceTime - Timer.currentRealTime()
+                        if self.limitRate:
+                            sleepDuration = 1 / self.rate
 
                             if sleepDuration > 1e-3:
-                                time.sleep(sleepDuration)
+                                time.sleep(1 / self.rate)
 
                         self._produce((line,))
-
-                        counter += 1
 
             except Exception:
                 self.onExecutionError()

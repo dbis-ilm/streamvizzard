@@ -47,27 +47,25 @@ export class OperatorRemovedPU extends PipelineUpdate {
     }
 }
 
-export class OperatorDataUpdatedPU extends PipelineUpdate {
-    constructor(opID, newOpUUID, opData, ctrlKey) {
+export class OperatorParamsUpdatedPU extends PipelineUpdate {
+    constructor(opID, opData, param) {
         super();
 
         this.opID = opID;
-        this.newOpUUID = newOpUUID;
         this.opData = opData;
-        this.ctrlKey = ctrlKey;
+        this.param = param;
     }
 
     createSocketData() {
-        return { type: "opDataUpdated", opID: this.opID, opUUID: this.newOpUUID, opData: this.opData, ctrlKey: this.ctrlKey };
+        return { type: "opParamsUpdated", opID: this.opID, opData: this.opData, param: this.param };
     }
 
     checkUpdate(other) {
-        if(other instanceof OperatorDataUpdatedPU && other.opID === this.opID
-            && other.ctrlKey === this.ctrlKey) {
+        if(other instanceof OperatorParamsUpdatedPU && other.opID === this.opID
+            && other.param === this.param) {
             this.opID = other.opID;
-            this.newOpUUID = other.newOpUUID;
             this.opData = other.opData;
-            this.ctrlKey = other.ctrlKey;
+            this.param = other.param;
 
             return true;
         }
@@ -76,7 +74,7 @@ export class OperatorDataUpdatedPU extends PipelineUpdate {
     }
 }
 
-export class OperatorMetaDataUpdatedPU extends PipelineUpdate {
+export class OperatorConfigUpdatedPU extends PipelineUpdate {
     constructor(opID, metaData) {
         super();
 
@@ -85,11 +83,11 @@ export class OperatorMetaDataUpdatedPU extends PipelineUpdate {
     }
 
     createSocketData() {
-        return { type: "opMetaUpdated", opID: this.opID, metaData: this.metaData };
+        return { type: "opConfigUpdated", opID: this.opID, metaData: this.metaData };
     }
 
     checkUpdate(other) {
-        if(other instanceof OperatorMetaDataUpdatedPU && other.opID === this.opID) {
+        if(other instanceof OperatorConfigUpdatedPU && other.opID === this.opID) {
             this.opID = other.opID;
             this.metaData = other.metaData;
 
@@ -103,14 +101,15 @@ export class OperatorMetaDataUpdatedPU extends PipelineUpdate {
 }
 
 export class ConnectionAddedPU extends PipelineUpdate {
+    /** @param {SvConnection} con **/
     constructor(con) {
         super();
 
         this.connectionID = con.id;
-        this.outOpID = con.output.node.id;
-        this.inOpID = con.input.node.id;
-        this.outSocketID = con.output.node.component.getOUTSocketByKey(con.output.node, con.output.key);
-        this.inSocketID = con.input.node.component.getINSocketByKey(con.input.node, con.input.key);
+        this.outOpID = con.output.operator.id;
+        this.inOpID = con.input.operator.id;
+        this.outSocketID = con.output.id;
+        this.inSocketID = con.input.id;
     }
 
     createSocketData() {

@@ -58,7 +58,7 @@ class PipelineCompiler(RuntimeService):
             return None
 
         if not self._applyConfigurations(compileConfigs, True, True, True):
-            return self._collectSuggestionResult()
+            return self._collectSuggestionResult(canceled=True)
 
         # Calculate suggestions for the user
 
@@ -126,7 +126,7 @@ class PipelineCompiler(RuntimeService):
 
         return res
 
-    def _collectSuggestionResult(self, statusMsg: Optional[str] = None) -> Optional[Dict]:
+    def _collectSuggestionResult(self, statusMsg: Optional[str] = None, canceled: bool = False) -> Optional[Dict]:
         errorMsg: Set[str] = set()
         res = []
 
@@ -146,7 +146,8 @@ class PipelineCompiler(RuntimeService):
             else:
                 fws = data.specsCatalog.deriveEnvRules()
 
-                if not cfg.hasValidTarget():
+                # If we canceled the suggestion calculation some operators might have no targets yet (which is fine)
+                if not cfg.hasValidTarget() and not canceled:
                     op.onExecutionError("Couldn't find a suitable compilation target!")
                     errorMsg.add("Couldn't calculate compilation targets!")
 

@@ -220,9 +220,16 @@ class PipelineDebugger(RuntimeService):
             # Re-Initialize debugger
             self.onPipelineStarting()
 
-    def executeProvenanceQuery(self, queryData: Dict):
-        if self._provenanceInspector is not None and self._provenanceInspector:
-            self._provenanceInspector.queryFromTemplate(queryData)
+    def executeProvenanceQuery(self, queryData: Dict) -> bool:
+        executed = False
+
+        if self._provenanceInspector is not None:
+            executed = self._provenanceInspector.queryFromTemplate(queryData)
+
+        if not executed:
+            self.getServerManager().sendSocketData(json.dumps({"cmd": "provQueryRes", "data": None}))
+
+        return executed
 
     # ---------------------------- GLOBAL STEP ----------------------------
 
@@ -249,6 +256,8 @@ class PipelineDebugger(RuntimeService):
                            "stepID": cs.localID,
                            "branchID": currentBranch.id,
                            "stepTime": cs.time,
+                           "stepType": cs.type.name,
+                           "stepOp": cs.debugger.getOperator().id,
                            "branchStepOffset": currentBranch.stepIDOffset,
                            "memSize": self._historyBufferManager.getMainMemorySize(),
                            "diskSize": self._historyBufferManager.getStorageMemorySize(),
@@ -365,17 +374,17 @@ class PipelineDebugger(RuntimeService):
 
     # ---------------------------- BREAKPOINTS ---------------------------
 
-    def triggerBreakpoint(self, ds: DebugStep, index: int):
+    def triggerBreakpoint(self, ds: DebugStep, bpId: str):
         if self.getHistoryState() is HistoryState.INACTIVE:
             self._activateHistory(True)
 
         self.serverManager.sendSocketData(json.dumps({"cmd": "triggerBP",
-                                                       "stepID": ds.localID,
-                                                       "branchID": ds.branchID,
-                                                       "op": ds.debugTuple.debugger.getOperator().id,
-                                                       "type": ds.type.name,
-                                                       "stepTime": ds.time,
-                                                       "bpIndex": index}))
+                                                      "stepID": ds.localID,
+                                                      "branchID": ds.branchID,
+                                                      "op": ds.debugTuple.debugger.getOperator().id,
+                                                      "type": ds.type.name,
+                                                      "stepTime": ds.time,
+                                                      "bpId": bpId}))
 
     # ------------------------------ GETTER ------------------------------
 

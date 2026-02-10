@@ -1,6 +1,6 @@
 import {Command} from "@/scripts/services/network/commands/Command";
-import {NetworkService} from "@/scripts/services/network/NetworkService";
-import {PipelineService, PIPELINE_STATUS} from "@/scripts/services/pipelineState/PipelineService";
+import {PIPELINE_STATUS} from "@/scripts/pipeline/Pipeline";
+import {SvInstance} from "@/scripts/StreamVizzard";
 
 class PipelineStatusCMD extends Command {
     constructor() {
@@ -11,13 +11,13 @@ class PipelineStatusCMD extends Command {
         let status = data["status"];
 
         if(status === "starting") {
-            PipelineService.setPipelineStatus(PIPELINE_STATUS.STARTING);
+            SvInstance.pipeline.setPipelineStatus(PIPELINE_STATUS.STARTING);
         } else if(status === "started") {
-            PipelineService.setPipelineStatus(PIPELINE_STATUS.STARTED);
+            SvInstance.pipeline.setPipelineStatus(PIPELINE_STATUS.STARTED);
         } else if(status === "stopping") {
-            PipelineService.setPipelineStatus(PIPELINE_STATUS.STOPPING);
+            SvInstance.pipeline.setPipelineStatus(PIPELINE_STATUS.STOPPING);
         }  else if(status === "stopped") {
-            PipelineService.setPipelineStatus(PIPELINE_STATUS.STOPPED);
+            SvInstance.pipeline.setPipelineStatus(PIPELINE_STATUS.STOPPED);
         }
     }
 }
@@ -28,13 +28,13 @@ class PipelineAdvisorSugCMD extends Command {
     }
 
     handleCommand(data) {
-        let op = PipelineService.getOperatorByID(data["opID"]);
+        let op = SvInstance.pipeline.getOperatorByID(data["opID"]);
 
-        if(op != null) op.component.setAdvisorSuggestions(op, data["sugs"]);
+        if(op != null) op.advisorSuggestions = data["sugs"];
     }
 }
 
-export function registerPipelineCMDs() {
-    NetworkService.registerCommand(new PipelineStatusCMD());
-    NetworkService.registerCommand(new PipelineAdvisorSugCMD());
+export function registerPipelineCMDs(service) {
+    service.registerCommand(new PipelineStatusCMD());
+    service.registerCommand(new PipelineAdvisorSugCMD());
 }

@@ -1,6 +1,6 @@
 {
   "name": "streamvizzard_frontend",
-  "version": "0.9.5",
+  "version": "0.9.6",
   "private": true,
   "scripts": {
     "serve": "vue-cli-service serve",
@@ -23,13 +23,6 @@
     "jquery-ui": "^1.13.2",
     "plotly.js-dist": "2.32.0",
     "regenerator-runtime": "^0.14.1",
-    "rete": "~1.5.2",
-    "rete-area-plugin": "~0.2.1",
-    "rete-connection-mastery-plugin": "~0.2.4",
-    "rete-connection-plugin": "~0.9.0",
-    "rete-context-menu-plugin": "~0.6.0",
-    "rete-history-plugin": "~0.2.3",
-    "rete-vue-render-plugin": "~0.5.2",
     "uuid": "^9.0.0",
     "vue": "2.6.14",
     "vue-js-modal": "^2.0.1",
@@ -44,15 +37,10 @@
     "@vue/cli-plugin-babel": "4.5.15",
     "@vue/cli-plugin-eslint": "4.5.15",
     "@vue/cli-service": "4.5.15",
+    "@types/jquery": "~3.5.32",
     "babel-eslint": "^10.1.0",
     "eslint": "^6.7.2",
     "eslint-plugin-vue": "^6.2.2"
-  },
-  "overrides": {
-    "rete-connection-mastery-plugin": {
-      "rete": "~1.5.2",
-      "rete-connection-plugin": "~0.9.0"
-    }
   },
   "eslintConfig": {
     "root": true,

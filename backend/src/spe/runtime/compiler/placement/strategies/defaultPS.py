@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import math
 import random
-from typing import Dict, TYPE_CHECKING, List, Optional, Iterator, Set, Tuple
+from typing import Dict, TYPE_CHECKING, List, Optional, Iterator, Tuple
 
 from spe.runtime.compiler.compilerRes import CompilerRes
 from spe.runtime.compiler.definitions.compileDefinitions import CompileParallelism, CompileComputeMode, CompileFramework
 from spe.runtime.compiler.definitions.compileFrameworkSpecs import getSupportedFrameworks
 from spe.runtime.compiler.opCompileConfig import OpCompileConfig
 from spe.runtime.compiler.placement.opTargetCatalog import OpTargetOption, OpTargetCatalog
-from spe.runtime.compiler.placement.placementUtils import estimateCommunicationTime, findTargetChains
+from spe.runtime.compiler.placement.placementUtils import estimateCommunicationTime, findTargetChains, \
+    DataExchangeOverhead
 from spe.runtime.compiler.placement.strategies.placementStrategy import PlacementStrategy
 from spe.common.timer import Timer
 from utils.utils import valueOr, clamp, tryParseInt, tryParseFloat, remap
@@ -39,7 +40,6 @@ class DefaultPS(PlacementStrategy):
         self.opTargetCatalog: Dict[int, OpTargetCatalog] = {}
 
         self._maxFrameworkPara: Dict[CompileFramework, int] = dict()
-        self._fwManualParas: Dict[CompileFramework, Set[int]] = dict()
 
         # Optimizations for speedup
         self._topologicalOpCatalogs: List[OpTargetCatalog] = list()
@@ -48,7 +48,9 @@ class DefaultPS(PlacementStrategy):
         self._parallelizedOptions: Dict[OpTargetOption, List[OpTargetOption]] = dict()
 
     def apply(self) -> CompilerRes:
-        self.calculateOpTargetCatalog()
+        if (catalogRes := self.calculateOpTargetCatalog()) is not None:
+            return catalogRes
+
         self._topologicalOpCatalogs = [self.opTargetCatalog[op.id] for op in list(self.pipeline.iterateTopological())]
         self._pipelineSinks = [self.opTargetCatalog[op.id] for op in self.pipeline.getSinks()]
 
@@ -91,7 +93,7 @@ class DefaultPS(PlacementStrategy):
 
         # Run bruteForce for all combinations!
 
-        bestScore = self.calculateOverallPerformanceScore()
+        bestScore = self.calculateOverallPerformanceScore()  # Initialize
         bestConstellation = self.snapshotCurrentConstellation(True)
 
         endIdx = len(allOperatorOptions) - 1
@@ -347,7 +349,7 @@ class DefaultPS(PlacementStrategy):
 
     def _deviateParallelizedOptions(self, option: OpTargetOption, returnCloned: bool = False) -> Iterator[OpTargetOption]:
         """ Iterates all suitable parallelized options for the input option.
-        If the option does not support parallelism, only the original option is returned.
+        If the option does not support parallelism [SingleNode || Manual || Inherit], only the original option is returned.
         Otherwise, various combinations of parallelism counts will be returned based on parent and framework."""
 
         # Future Work: Could improve this to exclude some parallelization options that do not improve performance
@@ -374,7 +376,7 @@ class DefaultPS(PlacementStrategy):
         if opCatalog.opData.metaData.inheritTarget:
             ourOption = opCatalog.selectedOption
 
-            if len(ourOption.catalog.inNeighbours) > 0:  # Take first neighbour if multiple
+            if len(ourOption.catalog.inNeighbours) > 0:  # Take first neighbour if multiple [shouldn't happen]
                 ourOption.target.resetTarget()
 
                 parentTarget = ourOption.catalog.inNeighbours[0].selectedOption.target
@@ -385,7 +387,7 @@ class DefaultPS(PlacementStrategy):
             else:  # No neighbour -> Rely on default vals
                 ...
 
-    def calculateOpTargetCatalog(self):
+    def calculateOpTargetCatalog(self) -> Optional[CompilerRes]:
         # Setup catalog and collect distinct target options + global max parallelism for each framework
 
         totalChainedExTime = 0  # Worst-case, taking the slowest value
@@ -405,16 +407,14 @@ class DefaultPS(PlacementStrategy):
                 option = OpTargetOption(self, opData.compileConfig, catalog)
                 option.supportsParallelism = False  # Fixed values
 
-                if opData.compileConfig.manual:
-                    s = self._fwManualParas.get(opData.compileConfig.framework, set())
-                    s.add(opData.compileConfig.parallelismCount)
-                    self._fwManualParas[opData.compileConfig.framework] = s
-
                 # If op has no inputs but must inherit its target, choose default target values
                 if opData.metaData.inheritTarget and len(opData.operator.getNeighbours(True, False)) == 0:
                     option.target.setTarget(opData.specsCatalog.createDefaultCompileConfig())
 
                 catalog.registerOption(option)
+
+                # Make sure to track max para in order to correctly calculate other operators
+                self._maxFrameworkPara[option.target.framework] = max(option.target.parallelismCount, self._maxFrameworkPara.get(option.target.framework, 1))
 
                 totalChainedExTime += valueOr(option.stats.targetExTime, 0) / option.target.parallelismCount
             else:
@@ -422,6 +422,9 @@ class DefaultPS(PlacementStrategy):
 
                 # Collect all supported combinations of compile targets
                 for framework in opData.specsCatalog.frameworks:
+                    if framework.framework not in self.allowedFrameworks:
+                        continue
+
                     for language in framework.supportedLanguages:
                         for cm in language.supportedComputeModes:
                             inCfg = OpCompileConfig()
@@ -432,6 +435,7 @@ class DefaultPS(PlacementStrategy):
                             option = OpTargetOption(self, inCfg, catalog)
 
                             # Calculate max individual parallelism for the operator
+                            # TODO: Could consider choosing max executor count as fixed max para
 
                             maxParallelism, singleNodeExTime = self.estimateIndividualMaxParallelism(option, totalChainedExTime)
 
@@ -447,6 +451,11 @@ class DefaultPS(PlacementStrategy):
 
                 totalChainedExTime += valueOr(worstExTime, 0)
 
+            if len(catalog.options) == 0:
+                return CompilerRes.error(f"Operator {op.getUniqueName()} has no available target frameworks!")
+
+        return None
+
     def estimateIndividualMaxParallelism(self, option: OpTargetOption, chainedTotalExTime: float) -> Tuple[Optional[int], float]:
         """ Calculates the max required level of parallelism to match the required inputTp.
          Considers worst-case chaining of all involved operators for max computational demands."""
@@ -457,7 +466,9 @@ class DefaultPS(PlacementStrategy):
         # Calc max possible overhead to neighbours (worst case scenario)
 
         outNeighbours = len(option.catalog.opData.operator.getNeighbours(False, True))
-        overhead = self.estimateTransferOverheadToNeighbour(option, None) * outNeighbours
+
+        exchangeOverhead = self.estimateTransferOverheadToNeighbour(option, None)
+        exchangeOverhead.multiply(outNeighbours)
 
         # Add penalty for transferring data between compute modes
 
@@ -468,10 +479,13 @@ class DefaultPS(PlacementStrategy):
             inSerializationCost = option.stats.totalInDataSerialization + option.stats.totalInDataDeserialization
             outSerializationCost = option.stats.totalOutDataSerialization + option.stats.totalOutDataDeserialization
 
-            overhead += estimateCommunicationTime(inDataSize, targetOutTp, self.avgGPUTransferSpeed, self.avgGPULatency) + inSerializationCost
-            overhead += estimateCommunicationTime(outDataSize, targetOutTp, self.avgGPUTransferSpeed, self.avgGPULatency) + outSerializationCost
+            overhead = estimateCommunicationTime(inDataSize, targetOutTp, inSerializationCost, self.avgGPUTransferSpeed, self.avgGPULatency)
+            exchangeOverhead.add(overhead)
 
-        exTime = valueOr(option.stats.targetExTime, 0) + overhead
+            overhead = estimateCommunicationTime(outDataSize, targetOutTp, outSerializationCost, self.avgGPUTransferSpeed, self.avgGPULatency)
+            exchangeOverhead.add(overhead)
+
+        exTime = valueOr(option.stats.targetExTime, 0) + exchangeOverhead.getTotal()  # Upper border, so we just add total transfer as CPU overhead
 
         if not lang.supportsParallelism(cfg.computeMode, CompileParallelism.DISTRIBUTED):
             return None, exTime
@@ -487,7 +501,7 @@ class DefaultPS(PlacementStrategy):
 
         return nodes, exTime
 
-    def estimateTransferOverheadToNeighbour(self, option1: OpTargetOption, option2: Optional[OpTargetOption]):
+    def estimateTransferOverheadToNeighbour(self, option1: OpTargetOption, option2: Optional[OpTargetOption]) -> DataExchangeOverhead:
         # Calculate communication overheads to neighbour based on the different compile targets.
         # If other option is None, consider worst case
 
@@ -500,30 +514,33 @@ class DefaultPS(PlacementStrategy):
 
         cfg1 = option1.target
 
-        neighbourPenalty = 0
+        neighbourInherit = option2 is not None and option2.catalog.opData.metaData.inheritTarget  # If neighbour inherits our target, no penality
+
+        exchangeOverhead = DataExchangeOverhead()
 
         # Compare target with neighbour and apply penalties for distinct target params
 
-        if option2 is None or cfg1.framework != option2.target.framework:
+        if option2 is None or cfg1.framework != option2.target.framework and not neighbourInherit:
             # Add penalty for exchanging data between the frameworks [cluster connections]
-            neighbourPenalty += estimateCommunicationTime(outDataSize, targetOutTp, self.avgConnectorTransferSpeed, self.avgConnectorTransferLatency)
-            neighbourPenalty += serializationCost
-            neighbourPenalty += self.targetSwitchPenalty
+
+            overhead = estimateCommunicationTime(outDataSize, targetOutTp, serializationCost, self.avgConnectorTransferSpeed, self.avgConnectorTransferLatency)
+            exchangeOverhead.add(overhead)
+            exchangeOverhead.latency += self.targetSwitchPenalty
 
         # Only consider parallelism if its defined yet
 
-        if option2 is None or cfg1.parallelismCount != option2.target.parallelismCount:
+        if option2 is None or cfg1.parallelismCount != option2.target.parallelismCount and not neighbourInherit:
             # Add penalty for transferring data between processing nodes [single round of data distribution]
             # We assume a full data shuffle to ensure even load distribution
 
-            neighbourPenalty += estimateCommunicationTime(outDataSize, targetOutTp, self.avgNodeTransferSpeed, self.avgNodeTransferLatency)
-            neighbourPenalty += serializationCost
-            neighbourPenalty += self.targetSwitchPenalty
+            overhead = estimateCommunicationTime(outDataSize, targetOutTp, serializationCost, self.avgNodeTransferSpeed, self.avgNodeTransferLatency)
+            exchangeOverhead.add(overhead)
+            exchangeOverhead.latency += self.targetSwitchPenalty
 
         if advisor := self._frameworkAdvisor[option1.target.framework]:
-            neighbourPenalty = advisor.adviceTransferCostToOutNeighbour(option1, option2, neighbourPenalty)
+            exchangeOverhead = advisor.adviceTransferCostToOutNeighbour(self, option1, option2, exchangeOverhead)
 
-        return neighbourPenalty  # Res in seconds
+        return exchangeOverhead
 
     def estimateFinalExecutionStats(self, opCatalog: OpTargetCatalog):
         # Calculate the estimated exTimes for the selected option of each operator.
@@ -535,10 +552,10 @@ class DefaultPS(PlacementStrategy):
 
         # Add overhead to all (out) neighbours we need to communicate to
 
-        overhead = 0
+        exchangeOverhead = DataExchangeOverhead()
 
         for nCatalog in opCatalog.outNeighbours:
-            overhead += self.estimateTransferOverheadToNeighbour(ourOption, nCatalog.selectedOption)
+            exchangeOverhead.add(self.estimateTransferOverheadToNeighbour(ourOption, nCatalog.selectedOption))
 
         # Add penalty for transferring data between compute modes
 
@@ -550,8 +567,8 @@ class DefaultPS(PlacementStrategy):
             inSerializationCost = ourOption.stats.totalInDataSerialization + ourOption.stats.totalInDataDeserialization
             outSerializationCost = ourOption.stats.totalOutDataSerialization + ourOption.stats.totalOutDataDeserialization
 
-            overhead += estimateCommunicationTime(inDataSize, targetOutTp, self.avgGPUTransferSpeed, self.avgGPULatency) + inSerializationCost
-            overhead += estimateCommunicationTime(outDataSize, targetOutTp, self.avgGPUTransferSpeed, self.avgGPULatency) + outSerializationCost
+            exchangeOverhead.add(estimateCommunicationTime(inDataSize, targetOutTp, inSerializationCost, self.avgGPUTransferSpeed, self.avgGPULatency))
+            exchangeOverhead.add(estimateCommunicationTime(outDataSize, targetOutTp, outSerializationCost, self.avgGPUTransferSpeed, self.avgGPULatency))
 
         # Our estimated ex time is slowed down by the collected overhead
 
@@ -563,13 +580,13 @@ class DefaultPS(PlacementStrategy):
 
             exTime += ourOption.stats.totalOutDataDeserialization
 
-        ourOption.stats.estTransferTime = overhead
+        ourOption.stats.estTransferTime = exchangeOverhead.getTotal()
         ourOption.stats.estCalcTime = exTime
 
     def estimateFinalThroughputs(self):
         # Find operator chains with same framework/language/computeMode
 
-        chains = findTargetChains(self._topologicalOpCatalogs)
+        chains = findTargetChains(self._topologicalOpCatalogs, self._frameworkAdvisor)
 
         # Calculate total execution load per chain (per executor) according to target tp
 

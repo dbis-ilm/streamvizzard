@@ -1,5 +1,6 @@
+from __future__ import annotations
 from collections import deque
-from typing import Optional, Deque
+from typing import Optional, Deque, List
 
 from spe.runtime.debugger.debugTuple import DebugTuple
 from spe.runtime.debugger.history.historyState import HistoryState
@@ -10,85 +11,111 @@ from streamVizzard import StreamVizzard
 
 
 class ConnectionMonitor:
+    class Entry:
+        def __init__(self, timestamp: float):
+            self.timestamp = timestamp
+
+            self.removedEntries: Optional[List[ConnectionMonitor.Entry]] = None
+
+            self.throughput = 0  # Calculated
+            self.prevThroughput = 0  # Calculated
+
     def __init__(self, connection):
+        self.SMOOTH = StreamVizzard.getConfig().MONITORING_OPERATOR_SMOOTH_FACTOR
+        self.WINDOW = StreamVizzard.getConfig().MONITORING_CONNECTION_THROUGHPUT_WINDOW
+
         self._monitor = getRuntimeManager().gateway.getMonitor()
         self.connection = connection
 
-        self.throughput = 0  # Calculated [tup/s]
+        self._throughput = 0  # Calculated [tup/s]
+        self._totalTuples = 0  # Counted
 
-        self._tupleQueue: Deque[tuple[float, int]] = deque()
-
-        self.totalTuples = 0
+        self._tupleQueue: Deque[ConnectionMonitor.Entry] = deque()
         self._throughputTuples = 0
+
+    def getTotalTuples(self):
+        return self._totalTuples
+
+    def getAvgThroughput(self):
+        return self._throughput
 
     def registerTuple(self, t: Tuple):
         historyState = t.operator.getHistoryState()
 
-        if historyState == HistoryState.TRAVERSING_BACKWARD:
-            self._undoTuple(t)
-        elif historyState == HistoryState.TRAVERSING_FORWARD:
-            self._redoTuple(t)
-        else:
-            dt = t.operator.getDebugger().getDT(t) if t.operator.isDebuggingEnabled() else None
-            self._addThroughputTuple(1, Timer.currentTime(), dt)
+        dt = t.operator.getDebugger().getDT(t) if t.operator.isDebuggingEnabled() else None
 
-        self._calcThroughput()
+        if historyState == HistoryState.TRAVERSING_BACKWARD:
+            self._undoRegister(dt)
+        elif historyState == HistoryState.TRAVERSING_FORWARD:
+            self._registerTuple(dt.getAttribute(f"cmData_{self.connection.id}", None, True), None)
+        else:
+            self._registerTuple(ConnectionMonitor.Entry(Timer.currentTime()), dt)
 
         self._monitor.onTupleTransmitted(self.connection)
 
-    def _addThroughputTuple(self, count: int, timestamp: float, dt: Optional[DebugTuple]):
-        self.totalTuples += count
+    def _registerTuple(self, t: ConnectionMonitor.Entry, dt: Optional[DebugTuple]):
+        self._throughputTuples += 1
+        self._totalTuples += 1
+        self._tupleQueue.append(t)
 
-        self._throughputTuples += count
-        self._tupleQueue.append((timestamp, count))
+        # Remove entries outside the window range and register in monitor entry
 
-        removed = None
-        if len(self._tupleQueue) > StreamVizzard.getConfig().MONITORING_CONNECTIONS_MAX_THROUGHPUT_ELEMENTS:
+        t.removedEntries = None
+
+        while self._tupleQueue and self._tupleQueue[0].timestamp < t.timestamp - self.WINDOW:
             removed = self._tupleQueue.popleft()
+            self._throughputTuples -= 1
 
-            self._throughputTuples -= removed[1]
+            if t.removedEntries is None:
+                t.removedEntries = [removed]
+            else:
+                t.removedEntries.append(removed)
 
         if dt is not None:
-            dt.registerAttribute("cmData" + str(self.connection.id), (timestamp, count), True)
+            dt.registerAttribute(f"cmData_{self.connection.id}", t, True)
 
-            # Register removed element to be restored if this action is undone
-            if removed is not None:
-                dt.registerAttribute("cmLastE" + str(self.connection.id), removed, True)
+        self._updateInternalStats(t, True)
 
-    def _redoTuple(self, nextT: Tuple):
-        dt = nextT.operator.getDebugger().getDT(nextT)
-        data = dt.getAttribute("cmData" + str(self.connection.id), None, True)
+    def _undoRegister(self, dt: DebugTuple):
+        # Remove last element which was added by this step
 
-        self._addThroughputTuple(data[1], data[0], None)
+        _ = self._tupleQueue.pop()
+        self._totalTuples -= 1
+        lastEntry: ConnectionMonitor.Entry = dt.getAttribute(f"cmData_{self.connection.id}", None, True)
 
-    def _undoTuple(self, nextT: Tuple):
-        dt = nextT.operator.getDebugger().getDT(nextT)
+        self._throughputTuples -= 1
 
-        lastElm = self._tupleQueue.pop()
+        # Add entries again which where (potentially) removed by the undone step
 
-        self.totalTuples -= lastElm[1]
-        self._throughputTuples -= lastElm[1]
+        if lastEntry.removedEntries is not None:
+            for removed in lastEntry.removedEntries:
+                self._tupleQueue.appendleft(removed)
+                self._throughputTuples += 1
 
-        # Check if we need to add element that was removed by the add operation we undo
-        removed = dt.getAttribute("cmLastE" + str(self.connection.id), None, True)
-        if removed is not None:
-            self._tupleQueue.appendleft(removed)
+        self._updateInternalStats(lastEntry, False)
 
-            self._throughputTuples += removed[1]
+    def _updateInternalStats(self, t: ConnectionMonitor.Entry, add: bool):
+        # Calculate throughput of current sliding window
 
-    def _calcThroughput(self):
-        queueSize = len(self._tupleQueue)
+        t.throughput = 0
 
-        # Might happen after undo
-        if queueSize == 0:
-            self.throughput = 0
-            return
+        if self._throughputTuples > 1:
+            firstElement = self._tupleQueue[0]
+            lastElement = self._tupleQueue[-1]
 
-        firstElement = self._tupleQueue[0]
-        lastElement = self._tupleQueue[queueSize - 1]
+            duration = lastElement.timestamp - firstElement.timestamp
 
-        deltaTime = lastElement[0] - firstElement[0]
+            t.throughput = (self._throughputTuples / duration) if duration > 0 else 0
 
-        # TODO: Calc should be based on time (e.g. 1 sec windows) and not on #tuples
-        # One less tp since the first entry can only count as a starting time, otherwise tp is too high
-        self.throughput = (max(0, (self._throughputTuples - 1)) / deltaTime) if deltaTime > 0 else 0
+        # Exponential Moving Average to smooth calculated throughput
+
+        if add:
+            t.prevThroughput = self._throughput  # Store prev value for undo
+
+            if self._totalTuples > 1:  # Can only apply EMA if we already have a value
+                self._throughput = self.SMOOTH * t.throughput + (1 - self.SMOOTH) * self._throughput
+            else:
+                self._throughput = t.throughput
+
+        else:  # Revert the addition of the recent element [since EMA can't be undone]
+            self._throughput = t.prevThroughput

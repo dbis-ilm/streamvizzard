@@ -34,16 +34,26 @@ class Pipeline(IEventEmitter):
         self._operatorStorage: Dict[int, Operator] = dict()
         self._connectionStorage: Dict[int, Connection] = dict()
 
-    def registerConnection(self, connection: Connection):
+    def registerConnection(self, connection: Connection) -> bool:
+        if connection.id in self._connectionLookup:
+            return False
+
         self._connectionLookup[connection.id] = connection
 
-    def registerOperator(self, operator: Operator):
+        return True
+
+    def registerOperator(self, operator: Operator) -> bool:
+        if operator.id in self._operatorLookup:
+            return False
+
         self._operators.append(operator)
 
         self._operatorLookup[operator.id] = operator
 
         if operator.isSource():
             self.sources.append(operator)
+
+        return True
 
     def getOperator(self, opID: int) -> Optional[Operator]:
         return self._operatorLookup.get(opID, None)
@@ -116,6 +126,37 @@ class Pipeline(IEventEmitter):
     def validate(self) -> Optional[str]:
         if len(self.sources) == 0:
             return "Pipeline has no sources!"
+
+        # Check cyclic connections
+
+        visitedStack: Set[int] = set()
+        handledOps: Set[int] = set()
+
+        def visitOp(currentOp: Operator) -> bool:
+            handledOps.add(currentOp.id)
+            visitedStack.add(currentOp.id)
+
+            for outSock in currentOp.outputs:
+                for c in outSock.getConnections():
+                    nextOp = c.input.op
+
+                    if nextOp.id not in handledOps:
+                        if not visitOp(nextOp):
+                            return False
+
+                    elif nextOp.id in visitedStack:
+                        return False
+
+            visitedStack.remove(currentOp.id)
+
+            return True
+
+        for op in self.getAllOperators():
+            if op.id in handledOps:
+                continue
+
+            if not visitOp(op):
+                return "Pipeline contains cyclic connections!"
 
         # Verify that all parent/children constraints are fulfilled
 

@@ -1,8 +1,8 @@
 <template>
   <div class="searchSelectList">
-    <div style="position: relative;">
+    <div style="display: flex;">
       <input class="formInputField small searchFilter" type="text" v-model="searchValue" placeholder="Search..."/>
-      <i class="clickableIcon bi bi-x-circle" title="Clear search" @click="() => searchValue = ''" style="position: absolute; right: 0.125rem; top: -0.5px; font-size: 1.25rem;"></i>
+      <i class="clickableIcon bi bi-x-circle searchClear" title="Clear search" @click="() => searchValue = ''"></i>
     </div>
     <div class="searchContainer" :style="maxContentHeight != null ? ('max-height: ' + maxContentHeight) : ''">
       <div class="spinnerContainer" v-if="loading"><div class="loader"></div></div>
@@ -38,12 +38,16 @@ export default {
     searchFunc: { // Function [elm, filterVal] that will be called when searching the list, default=searching all elms in obj
       default: null,
     },
+    searchKeys: { // Array of custom object keys to use for filter searching, default=no keys are searched
+      type: Array,
+      default: null
+    },
     categoryRetriever: { // If categories should be used to organize the list, null if not
       default: null,
     },
     maxContentHeight: {default: null},
     allowDelete: { default: true},
-    deleteTooltip: {default: 'Delete from server'},
+    deleteTooltip: {default: "Delete from server"},
     allowEdit: { default: false},
     editTooltip: {default: 'Edit entry'},
   },
@@ -75,7 +79,7 @@ export default {
         let catElmLookup = {};
 
         for(let elm of this.dataArray) {
-          let cat = safeVal(this.categoryRetriever(elm), null);
+          let cat = safeVal(this.categoryRetriever(elm));
           categories.add(cat);
 
           if(cat in catElmLookup) catElmLookup[cat].push(elm);
@@ -111,20 +115,29 @@ export default {
 
       if(this.searchFunc != null) return this.searchFunc(elm, filterVal);
       else { // Not recursive!
+        if(this.getDescriptor(elm).toLowerCase().includes(filterVal.toLowerCase())) return true;
+
+        if(this.categoriesEnabled) {
+          let cat = safeVal(this.categoryRetriever(elm));
+          if(cat != null && cat.toLowerCase().includes(filterVal.toLowerCase())) return true;
+        }
+
         if(typeof elm === 'object') return this._filterObjectKeys(elm, filterVal);
         else if(Array.isArray(elm)) return this._filterArrayElms(elm, filterVal);
 
-        return this.getDescriptor(elm).includes(filterVal)
+        return false;
       }
     },
 
     _filterObjectKeys(elm, filterVal) {
+      if(this.searchKeys == null) return false;
+
       let filterValLC = filterVal.toLowerCase();
 
-      for(let dv in elm) {
+      for(let dv of this.searchKeys) {
         let val = elm[dv];
 
-        if((typeof val === 'string' || val instanceof String) && elm[dv].toLowerCase().includes(filterValLC)) return true;
+        if(val != null && (typeof val === 'string' || val instanceof String) && val.toLowerCase().includes(filterValLC)) return true;
       }
 
       return false;
@@ -175,8 +188,13 @@ export default {
 <style scoped>
 
 .searchFilter {
-  width: calc(100% - 2rem);
+  width: 100%;
   height: 1.5rem;
+}
+
+.searchClear {
+  padding-left: 3px;
+  font-size: 1.25rem;
 }
 
 .searchContainer {

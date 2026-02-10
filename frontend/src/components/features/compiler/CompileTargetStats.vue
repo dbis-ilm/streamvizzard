@@ -2,16 +2,18 @@
   <div>
     <div class="formInputContainer">
       <span class="formInputLabel limitedText alignLeft" title="Processed tuples per second">Throughput:&nbsp;</span>
-      <FormInputWithUnit :class="(targetStats['autoTp'] ? 'disabled' : '')" :type="'text'" :readonly="false" v-model="targetStats['targetTp']" :unit="'tuples / s'" :unitWidth="'80px'"></FormInputWithUnit>
+      <FormInputWithUnit :class="(targetStats['autoTp'] ? 'disabled' : '')" :type="'text'" :readonly="false"
+                         v-model="targetStats['targetTp']" :unit="'tuples / s'" :unitWidth="'80px'" @change="_onValueChanged('targetTp')"/>
       <div class="autoSelect" title="Auto, if this value should be derived by the compiler">
-        Auto:&nbsp;<input type="checkbox" :checked="targetStats['autoTp']" @change="_onAutoCheck('autoTp', $event)"/>
+        Auto:&nbsp;<input type="checkbox" class="targetCheck" :checked="targetStats['autoTp']" @change="_onAutoCheck('autoTp', $event)"/>
       </div>
     </div>
     <div class="formInputContainer">
       <span class="formInputLabel limitedText alignLeft" title="Operator single-node execution time per tuple">Execution <span class="dataSource" :title="'Source of information: ' + _getExInformationSource()">{{ _getExInformationSource().charAt(0) }}</span> :&nbsp;</span>
-      <FormInputWithUnit :class="(targetStats['autoExTime'] ? 'disabled' : '')" :type="'text'" :readonly="false" v-model="targetStats['targetExTime']" :unit="'ms'" :unitWidth="'35px'"></FormInputWithUnit>
+      <FormInputWithUnit :class="(targetStats['autoExTime'] ? 'disabled' : '')" :type="'text'" :readonly="false"
+                         v-model="targetStats['targetExTime']" :unit="'ms'" :unitWidth="'35px'" @change="_onValueChanged('targetExTime')"/>
       <div class="autoSelect" title="Auto, if this value should be derived by the compiler">
-        Auto:&nbsp;<input type="checkbox" :checked="targetStats['autoExTime']" @change="_onAutoCheck('autoExTime', $event)"/>
+        Auto:&nbsp;<input type="checkbox" class="targetCheck" :checked="targetStats['autoExTime']" @change="_onAutoCheck('autoExTime', $event)"/>
       </div>
     </div>
   </div>
@@ -19,17 +21,24 @@
 
 <script>
 
-
 import FormInputWithUnit from "@/components/interface/elements/base/FormInputWithUnit.vue";
+import {OpCompileCfgTargetStats} from "@/scripts/features/compiler/OperatorCompiler";
 
 export default {
-  name: 'CompileTargetStats',
   components: {FormInputWithUnit},
-  props: ["node", "targetStats"],
+  props: {
+    targetStats: {type: OpCompileCfgTargetStats, required: true},
+  },
 
   methods: {
     _onAutoCheck(key, e) {
       this.targetStats[key] = e.target.checked
+
+      if(e.target.checked) this.$emit('change', this.targetStats[key]);
+    },
+
+    _onValueChanged(key) {
+      this.$emit('change', this.targetStats[key]);
     },
 
     _getExInformationSource() {
@@ -54,6 +63,10 @@ export default {
 </style>
 
 <style scoped>
+
+.targetCheck {
+  top: 3px;
+}
 
 hr {
   color: var(--main-border-color);

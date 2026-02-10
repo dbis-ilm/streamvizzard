@@ -1,4 +1,5 @@
 import re
+from typing import Callable, Optional
 
 from spe.common.dataType import DataType
 
@@ -49,11 +50,11 @@ def instantiateUserDefinedClass(operator, code, oldInstance):
     return newInstance
 
 
-def instantiateUserDefinedFunction(operator, c):
+def instantiateUserDefinedFunction(operator, rawCode) -> Optional[Callable]:
     code = ""
 
     # TODO: We could optimize execution by extracting imports with AST
-    lines = c.split("\n")
+    lines = rawCode.split("\n")
 
     code += "def func(input):\n"
 

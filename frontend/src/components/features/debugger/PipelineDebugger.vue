@@ -1,22 +1,24 @@
 <template>
 <div id="pipelineDebugger" style="width: 30%; margin: 0 auto; display:inline-block; position: relative;">
-  <EditorHistory ref="editorHistory" :canAddEvent="_onEditorHistoryEventAdded" :canUpdateEvent="_onEditorEventUpdate" :maxEvents="null" :clearRedoOnNewEvent="false"></EditorHistory>
-  <div ref="rewindBwd" :class="'clickableIcon controlButton ' + (!historyActive ? 'disabled' : '')" title="Rewind Backward" @click="_rewind($event, false)" style="left: -35px;"><i class="bi bi-rewind-circle"></i></div>
+  <EditorHistory ref="editorHistory" :onEventAdded="_onEditorHistoryEventAdded" :canUpdateEvent="_onEditorEventUpdate" :maxEvents="null" :clearRedoOnNewEvent="false"></EditorHistory>
+  <div :class="['clickableIcon', 'controlButton', !historyActive && 'disabled', $streamvizzard.debugger.rewinding && !$streamvizzard.debugger.rewindForward && 'activated']"
+       title="Rewind Backward" @click="_rewind(false)" style="left: -35px;"><i class="bi bi-rewind-circle"></i></div>
   <div :class="'clickableIcon controlButton ' + (!historyActive ? 'disabled' : '')" title="1 Step Backward" @click="_stepHistory(-1)" style="left: -12px;"><i class="bi bi-arrow-left-circle"></i></div>
   <div style="display: inline-block; position: relative;">
-    <div style="cursor:default;">Pipeline History <i class="bi bi-info-circle" :title="memoryString"></i></div>
-    <div :class="'clickableIcon ' + (!pipelineRunning ? 'disabled' : '')" title="Toggles the history graph" @click="_toggleHistoryGraph" style="position: absolute; font-size: 26px; right: -30px; top: calc((100% - 36px)/2);"><i :class="'bi bi-diagram-2' + ($refs.historyGraph && $refs.historyGraph.isOpen ? '-fill' : '')"></i></div>
-    <div v-if="system.debuggerProvenanceEnabled" :class="'clickableIcon ' + (!pipelineRunning ? 'disabled' : '')" title="Toggles the provenance inspector" @click="_toggleProvInspector" style="position: absolute; font-size: 22px; right: -56px; top: calc((100% - 29px)/2);"><i :class="'bi bi-clipboard-data' + ($refs.provInspector && $refs.provInspector.isOpen ? '-fill' : '')"></i></div>
+    <div style="cursor:default;">Pipeline History <i class="bi bi-info-circle" :title="memoryInfo"></i></div>
+    <div :class="'clickableIcon ' + (!$streamvizzard.pipeline.isPipelineStarted() ? 'disabled' : '')" title="Toggles the history graph" @click="_toggleHistoryGraph" style="position: absolute; font-size: 26px; right: -30px; top: calc((100% - 36px)/2);"><i :class="'bi bi-diagram-2' + ($refs.historyGraph && $refs.historyGraph.isOpen ? '-fill' : '')"></i></div>
+    <div v-if="$streamvizzard.debugger.provenanceEnabled" :class="'clickableIcon ' + (!$streamvizzard.pipeline.isPipelineStarted() ? 'disabled' : '')" title="Toggles the provenance inspector" @click="_toggleProvInspector" style="position: absolute; font-size: 22px; right: -56px; top: calc((100% - 29px)/2);"><i :class="'bi bi-clipboard-data' + ($refs.provInspector && $refs.provInspector.isOpen ? '-fill' : '')"></i></div>
   </div>
-  <vue-slider v-model="currentStepID" :disabled="!historyActive" v-bind="options"
-              :tooltip-formatter="val => _getStepString(val)" @change="_onSliderChange"
-              style="display:inline-block; width: calc(100% - 40px); margin-top: -0.5px">
-  </vue-slider>
-  <div :class="'clickableIcon controlButton ' + (!historyActive ? 'disabled' : '')" title="1 Step Forward" @click="_stepHistory(1)" style="right: -12px;"><i class="bi bi-arrow-right-circle"></i></div>
-  <div ref="rewindFwd" :class="'mirrorY clickableIcon controlButton ' + (!historyActive ? 'disabled' : '')" title="Rewind Forward" @click="_rewind($event, true)" style="right: -35px;margin-top: 0.5px;"><i class="bi bi-rewind-circle"></i></div>
-  <div :class="'clickableIcon controlButton ' + (maxSteps <= 0 ? 'disabled' : '')" title="Pause / Continue the pipeline" @click="_onControlClicked" style="right: -58px;"><i :class="'bi ' + (!historyActive ? 'bi-pause-circle' : 'bi-play-circle')"></i></div>
-  <HistoryGraph ref="historyGraph" @onBranchTraversal="_onBranchTraversal" :traversalAllowed="historyActive && rewind == null" @onHistoryTraversal="_toggleHistoryTraversal"></HistoryGraph>
-  <ProvInspector ref="provInspector" :debugger="this" v-if="system.debuggerProvenanceEnabled" @executeQuery="_onProvQueryExecuted"></ProvInspector>
+
+  <vue-slider class="stepSlider" v-model="currentStepID" :disabled="!historyActive" v-bind="options" :tooltip-formatter="val => _getStepString(val)"
+              @drag-start="draggingSlider=true" @change="_onStepSliderChange" @drag-end="_onStepSliderRelease" />
+
+  <div :class="['clickableIcon', 'controlButton', !historyActive && 'disabled']" title="1 Step Forward" @click="_stepHistory(1)" style="right: -12px;"><i class="bi bi-arrow-right-circle"></i></div>
+  <div :class="['clickableIcon', 'controlButton', 'mirrorY', !historyActive && 'disabled', $streamvizzard.debugger.rewinding && $streamvizzard.debugger.rewindForward && 'activated']"
+       title="Rewind Forward" @click="_rewind(true)" style="right: -35px;margin-top: 0.5px;"><i class="bi bi-rewind-circle"></i></div>
+  <div :class="['clickableIcon', 'controlButton', maxSteps <= 0 && 'disabled']" title="Pause / Continue the pipeline" @click="_toggleState" style="right: -58px;"><i :class="'bi ' + (!historyActive ? 'bi-pause-circle' : 'bi-play-circle')"></i></div>
+  <HistoryGraph ref="historyGraph" @onBranchTraversal="_onBranchTraversal" :traversalAllowed="historyActive && !$streamvizzard.debugger.rewinding" @onHistoryTraversal="_toggleHistoryTraversal"></HistoryGraph>
+  <ProvInspector ref="provInspector" :debugger="this" v-if="$streamvizzard.debugger.provenanceEnabled"></ProvInspector>
 </div>
 </template>
 
@@ -24,38 +26,24 @@
 import 'vue-slider-component/theme/antd.css'
 import {EVENTS, executeEvent, registerEvent} from "@/scripts/tools/EventHandler";
 import {clamp, formatDataSize, formatTime} from "@/scripts/tools/Utils";
-import $ from 'jquery'
-import {getStepDescriptionForType} from "@/scripts/tools/debugger/DebugSteps";
 import EditorHistory from "@/components/utils/editorHistory/EditorHistory.vue";
-import {system} from "@/main";
 import HistoryGraph from "@/components/features/debugger/HistoryGraph.vue";
 import ProvInspector from "@/components/features/debugger/ProvInspector.vue";
-import {PipelineUpdateService} from "@/scripts/services/pipelineUpdates/PipelineUpdateService";
-import {PipelineService} from "@/scripts/services/pipelineState/PipelineService";
+import {Services} from "@/scripts/services/Services";
+import {SvInstance} from "@/scripts/StreamVizzard";
+
+// Detailed information about the branches, their step count and offsets are stored inside the history graph for lookup!
 
 export default {
-  name: "PipelineDebugger",
-  computed: {
-    system() {
-      return system
-    },
-
-    historyGraph() {
-      return this.$refs.historyGraph;
-    }
-  },
   components: {ProvInspector, HistoryGraph, EditorHistory},
+
   data() {
     return {
-      currentStepID: 1,
-      currentStepTime: 0,
-      maxSteps: 0,
+      draggingSlider: false,
 
-      pipelineRunning: false,
-      historyActive: false,
-      historyPaused: false,  // Only set from server, true=pipelineState is paused, and we traverse manually
-      rewind: null,
-      memoryString: "Cache: 0MB | Disk: 0MB",
+      // Controls slider, real values are defined in debugger/historyGraph
+      currentStepID: 1,
+      maxSteps: 0,
 
       options: {
         dotSize: 14,
@@ -72,87 +60,91 @@ export default {
     }
   },
 
+  computed: {
+    historyActive() {
+      return this.$streamvizzard.debugger.historyActive;
+    },
+
+    historyGraph() {
+      return this.$refs.historyGraph;
+    },
+
+    memoryInfo() {
+      let currentMemLimit = this.$streamvizzard.debugger.memoryLimit;
+      let currentStorageLimit = this.$streamvizzard.debugger.storageLimit;
+
+      let currentMemSize = this.$streamvizzard.debugger.currentMemSize;
+      let currentStorageSize = this.$streamvizzard.debugger.currentStorageSize;
+
+      return "Cache: " + (currentMemLimit != null ? (formatDataSize(currentMemSize) + " / " + formatDataSize(currentMemLimit)) : formatDataSize(currentMemSize))
+          + " | Disk: " + (currentStorageLimit != null ? (formatDataSize(currentStorageSize) + " / " + formatDataSize(currentStorageLimit)) : formatDataSize(currentStorageSize));
+    }
+  },
+
   methods: {
     _getStepString(val) {
       if(this.maxSteps <= 0) return 'Step: 0 / 0';
 
-      let timeStr = (this.$refs.historyGraph.isOpen ? '| ΔTime: ' + formatTime(this.$refs.historyGraph.getCurrentDeltaTime(this.currentStepTime)) : '');
+      let timeStr = (this.$refs.historyGraph.isOpen ? '| ΔTime: ' + formatTime(this.$refs.historyGraph.getCurrentDeltaTime()) : '');
 
       return 'Step: ' + (val - this.options.min + 1) + ' / ' + this.maxSteps + timeStr;
     },
 
-    _onControlClicked() {
-      this._changeHistoryState(!this.historyActive);
-
-      this.$emit('stateChange');
+    _toggleState() {
+      this.$streamvizzard.debugger.changeState(!this.historyActive, this.$streamvizzard.debugger.rewinding, this.$streamvizzard.debugger.rewindForward);
     },
 
-    _onSliderChange() {
-      this._removeRewind();
+    _rewind(forward) {
+      let rewindActive = true;
 
+      // Disable rewind if we select same rewind mode again
+      if(this.$streamvizzard.debugger.rewinding && this.$streamvizzard.debugger.rewindForward === forward) rewindActive = false;
+
+      this.$streamvizzard.debugger.changeState(this.historyActive, rewindActive, forward);
+    },
+
+    _onStepSliderChange() {
       this.$refs.historyGraph.signalTargetRequested(this.$refs.historyGraph.currentBranchID, this.currentStepID);
 
       let currentBID = this.$refs.historyGraph.currentBranchID;
 
-      this.$emit('stepChange', currentBID, (this.currentStepID + this.$refs.historyGraph.getStepOffsetForBranch(currentBID)));
+      this.$streamvizzard.debugger.traverseTo(currentBID, (this.currentStepID + this.$refs.historyGraph.getStepOffsetForBranch(currentBID)))
     },
 
-    async _onBranchTraversal(branchID, stepID, targetTime, maxSteps) {
-      this._removeRewind();
+    _onStepSliderRelease() {
+      this.draggingSlider = false;
 
-      this.maxSteps = maxSteps;
-      this.options.max = maxSteps - 1;
+      // Sync current step since we only update on traversal when not dragging
+      this._syncSlider();
+    },
+
+    _onBranchTraversal(branchID, stepID, targetTime) {
+      // Triggered by history graph based on available information (stepID vs stepTime)
 
       if(stepID != null) {
-        this.currentStepID = stepID - this.$refs.historyGraph.getStepOffsetForBranch(branchID);
-        this.$emit('stepChange', this.$refs.historyGraph.currentBranchID, stepID);
+        this.$streamvizzard.debugger.traverseTo(branchID, stepID);
       } else {
-        this.$emit('requestStep', this.$refs.historyGraph.currentBranchID, targetTime);
+        this.$streamvizzard.debugger.requestStep(branchID, targetTime, (branchID, stepID) => {
+          this.$refs.historyGraph.onReceiveRequestedStep(branchID, stepID);
+        });
       }
+    },
+
+    _syncSlider(syncStep=true) {
+      // Synchronizes the current slider state with the selected step/branch from the graph
+
+      let bd = this.$refs.historyGraph.getCurrentBranchData();
+
+      this.maxSteps = bd.stepCount;
+      this.options.max = bd.stepCount - 1;
+
+      if(syncStep) this.currentStepID = bd.stepID - bd.offset;
     },
 
     _stepHistory(val) {
       this.currentStepID = clamp(this.currentStepID + val, this.options.min, this.options.max);
 
-      this._onSliderChange();
-    },
-
-    _rewind(event, forward) {
-      if(this.rewind == null || (this.rewind === 1 && !forward) || (this.rewind === 2 && forward)) this._setRewindStatus(forward ? 1 : 2);
-      else this._setRewindStatus(null);
-
-      this.$emit('stateChange');
-    },
-
-    _setRewindStatus(status) {
-      this._removeRewind();
-
-      this.rewind = status;
-
-      if(this.rewind === 1) $(this.$refs.rewindFwd).addClass("activated");
-      else if(this.rewind === 2) $(this.$refs.rewindBwd).addClass("activated");
-    },
-
-    _removeRewind() {
-      this.rewind = null;
-
-      $('#pipelineDebugger').find('.controlButton.activated').each(function() {
-        $(this).removeClass("activated");
-      });
-    },
-
-    _changeHistoryState(active) {
-      if(active !== this.historyActive) executeEvent(EVENTS.HISTORY_STATE_CHANGED, active);
-
-      this.historyActive = active;
-    },
-
-    getRewind() {
-      return this.rewind;
-    },
-
-    isHistoryActive() {
-      return this.historyActive;
+      this._onStepSliderChange();
     },
 
     _toggleHistoryGraph() {
@@ -172,74 +164,38 @@ export default {
     _toggleHistoryTraversal(traverse) {
       if(traverse) {
         // Stop server and history from tracking events we undo/redo manually
-        PipelineUpdateService.listenForPipelineChanges(false);
+        Services.PipelineUpdates.listenForPipelineChanges(false);
         executeEvent(EVENTS.UI_HISTORY_TRAVERSE, [true, true]);
       } else {
-        PipelineUpdateService.listenForPipelineChanges(true);
+        Services.PipelineUpdates.listenForPipelineChanges(true);
         executeEvent(EVENTS.UI_HISTORY_TRAVERSE, [false, true]);
       }
     },
 
-    onReceiveRequestedStep(branchID, stepID) {
-      this.$refs.historyGraph.onReceiveRequestedStep(branchID, stepID);
+    // ----------------------------------------------- Backend Callbacks -----------------------------------------------
+
+    /** @param {DebugStep} currentStep
+     * @param {Number} maxSteps
+     * @param {Number} branchStartTime
+     * @param {Number} branchEndTime
+     * @param {Number} branchStepOffset */
+    async updateHistory(currentStep, maxSteps, branchStartTime, branchEndTime, branchStepOffset) {
+      this.$refs.historyGraph.updateBranchData(currentStep.branchID, branchStartTime, branchEndTime, maxSteps, branchStepOffset);
+      await this.$refs.historyGraph.setCurrentStep(currentStep.branchID, currentStep.stepID, currentStep.stepTime, true);
+
+      this._syncSlider();
     },
 
-    async updateTimeline(active, maxSteps, stepID, branchID, stepTime, branchStartTime, branchEndTime, branchStepOffset, currentMemSize, currentMemLimit, currentStorageSize, currentStorageLimit) {
-      this._changeHistoryState(active);
+    /** @param {DebugStep} step **/
+    async onStepExecution(step) {
+      await this.$refs.historyGraph.setCurrentStep(step.branchID, step.stepID, step.stepTime, false);
 
-      this.maxSteps = maxSteps;
-      this.memoryString = "Cache: " + (currentMemLimit != null ? (formatDataSize(currentMemSize) + " / " + formatDataSize(currentMemLimit)) : formatDataSize(currentMemSize))
-        + " | Disk: " + (currentStorageLimit != null ? (formatDataSize(currentStorageSize) + " / " + formatDataSize(currentStorageLimit)) : formatDataSize(currentStorageSize));
-
-      this.options.max = maxSteps - 1;
-      this.currentStepID = stepID - branchStepOffset;
-      this.currentStepTime = stepTime;
-
-      this.$refs.historyGraph.updateBranchData(branchID, branchStartTime, branchEndTime, maxSteps, branchStepOffset);
-      await this.$refs.historyGraph.setCurrentStep(branchID, stepID, stepTime, true);
-
-      this.historyPaused = active;
-    },
-
-    async onStepExecution(stepID, branchID, opID, type, undo, stepTime) {
-      await this.$refs.historyGraph.setCurrentStep(branchID, stepID, stepTime, false);
-
-      if(this.rewind != null) this.currentStepID = stepID; //Only set if rewinding, otherwise this leads to stuttering slider if syncing value
-
-      this.currentStepTime = stepTime;
-
-      if(!system.debuggerStepNotifications) return;
-
-      let op = PipelineService.getOperatorByID(opID);
-      if(op == null) return;
-
-      let jqOp = $(op.vueContext.$el);
-
-      // Remove previous overlays
-      let prevElms = jqOp.find('.stepInfoOverlay');
-      prevElms.each(function() {$(this).remove();})
-
-      let newEl = $.parseHTML("<div class='stepInfoOverlay'><b>" + (undo != null ? (undo ? "Undo ": "Redo ") : "") + "</b>" + getStepDescriptionForType(type) + "<div class='arrow'><span></span></div></div>");
-      let newJqEl = $(newEl);
-
-      jqOp.append(newEl);
-
-      newJqEl.css("top", -(newJqEl.height() + 10 + 3));
-      newJqEl.addClass("visible");
-      if(prevElms.length > 0) newJqEl.addClass("stepInfoOverlayFastTrans");
-
-      // Schedule removal
-      setTimeout(function() {
-        newJqEl.removeClass("stepInfoOverlayFastTrans visible").delay(500).queue(function() { $(this).remove(); });
-      }, 1500);
+      // Only sync slider position when not currently dragging to avoid sync stuttering
+      this._syncSlider(!this.draggingSlider);
     },
 
     async undoPendingUpdates(updateIDs) {
       await this.$refs.historyGraph.undoPendingUpdateEvents(updateIDs);
-    },
-
-    onRewindStatusUpdate(rewindStatus) {
-      this._setRewindStatus(rewindStatus);
     },
 
     onHistoryGraphUpdate(updates) {
@@ -260,6 +216,8 @@ export default {
       if(this.$refs.provInspector) this.$refs.provInspector.onReceiveQueryResult(data);
     },
 
+    // -----------------------------------------------------------------------------------------------------------------
+
     _onEditorHistoryEventAdded(event) {
       // Pipeline Update registration and this history event tracking are independent of each other for simplicity
       // Ideally, the server would receive all information to redo/undo specific UI events and sends them on demand
@@ -269,41 +227,22 @@ export default {
 
       // Register event in dictionary with current updateID
 
-      event.updateID = PipelineUpdateService.getUniqueUpdateID();
+      event.updateID = Services.PipelineUpdates.getUniqueUpdateID();
 
       this.$refs.historyGraph.registerPipelineUpdateEvent(event);
 
       if(event.isUIEvent()) executeEvent(EVENTS.DEBUG_UI_EVENT_REGISTERED, event);
-
-      return true;
     },
 
     _onEditorEventUpdate(event) {
       //True if event can be updated, false if new event needs to be created
-      return event.updateID === PipelineUpdateService.getUniqueUpdateID();
-    },
-
-    _onPipelineStatusChanged() {
-      this.reset();
-
-      this.pipelineRunning = PipelineService.isPipelineStarted();
-
-      //Only listen for events when pipelineState is running
-      if(this.$refs.editorHistory) this.$refs.editorHistory.silent = !this.pipelineRunning;
-    },
-
-    _onProvQueryExecuted(query) {
-      this.$emit("provQueryExecute", query);
+      return event.updateID === Services.PipelineUpdates.getUniqueUpdateID();
     },
 
     reset() {
-      this.currentStepTime = 0;
       this.maxSteps = 0;
-      this.memoryString = "Cache: 0MB | Disk: 0MB";
       this.options.max = 1;
-      this.currentStepID = this.options.max; // Triggers onSliderChange??
-      this.rewind = null;
-      this._removeRewind();
+      this.currentStepID = this.options.max;
 
       if(this.$refs.historyGraph) this.$refs.historyGraph.reset();
       if(this.$refs.provInspector) this.$refs.provInspector.reset();
@@ -312,21 +251,26 @@ export default {
         this.$refs.editorHistory.clear();
         this.$refs.editorHistory.silent = true;
       }
-
-      this.pipelineRunning = false;
-      this.historyActive = false;
-      this.historyPaused = false;
     }
   },
 
   mounted() {
-    this.$refs.editorHistory.initialize(system.editor);
+    this.$streamvizzard.debugger.onResetCb = this.reset;
+    this.$streamvizzard.debugger.onStepExecutedCb = this.onStepExecution;
+    this.$streamvizzard.debugger.updateHistoryCb = this.updateHistory;
+    this.$streamvizzard.debugger.undoPendingUpdatesCb = this.undoPendingUpdates;
+    this.$streamvizzard.debugger.historyGraphUpdateCb = this.onHistoryGraphUpdate;
+    this.$streamvizzard.debugger.pipelineUpdateRegCb = this.onPipelineUpdateRegistered;
+    this.$streamvizzard.debugger.onHistorySplitCb = this.onHistorySplit;
+    this.$streamvizzard.debugger.receiveProvResCb = this.onReceiveProvenanceQueryResult;
+
     this.$refs.editorHistory.silent = true;
 
-    this.reset();
+    registerEvent(EVENTS.PIPELINE_STATUS_CHANGED, () => {
+      // Only listen for events when pipelineState is running
+      if(this.$refs.editorHistory) this.$refs.editorHistory.silent = !SvInstance.pipeline.isPipelineStarted();
+    });
 
-    registerEvent(EVENTS.PIPELINE_STATUS_CHANGED, this._onPipelineStatusChanged);
-    this._onPipelineStatusChanged(PipelineService.getPipelineStatus());
   }
 }
 </script>
@@ -339,61 +283,15 @@ export default {
   font-size: 20px;
 }
 
+.stepSlider {
+  display: inline-block;
+  width: calc(100% - 40px) !important;
+  margin-top: -0.5px
+}
+
 </style>
 
 <style>
-
-.stepInfoOverlay {
-  position: absolute;
-  color: white;
-  background: rgb(68, 68, 68, 0.95);
-  border: 2px solid #222;
-  border-radius: 8px;
-
-  font-size: 26px;
-  padding-left: 5px;
-  padding-right: 5px;
-
-  top: 0;
-  left: 0;
-  right: 0;
-  margin: 0 auto;
-  text-align: center;
-  max-width: 350px;
-
-  opacity: 0;
-
-  transition: opacity 250ms;
-}
-
-.stepInfoOverlayFastTrans {
-  transition: opacity 50ms !important;
-}
-
-.stepInfoOverlay.visible {
-  opacity: 1;
-}
-
-.stepInfoOverlay .arrow {
-  position: absolute;
-  bottom: -5px;
-  left: 0;
-  right: 0;
-  margin: 0 auto;
-  width: 50px;
-  height: 25px;
-}
-
-.stepInfoOverlay .arrow > span {
-  margin: 20px 0;
-  display: inline-block;
-  vertical-align: middle;
-  width: 0;
-  height: 0;
-  border-left: 10px solid transparent;
-  border-right: 10px solid transparent;
-  border-top: 10px solid #222;
-}
 
 #pipelineDebugger .controlButton.activated {
   color:rgb(105, 192, 255);

@@ -21,19 +21,21 @@ export default {
   methods: {
     onChange(event) {
       this.$emit("change", event);
+      this.$forceUpdate(); // Force update here in case outside sets value back to original which will not update textarea
     },
 
     onInput() {
+      if(!this.$refs.elm) return; // Operator might be deleted
+
       this.$refs.elm.style.height = "auto";
       this.$refs.elm.style.height = this.$refs.elm.scrollHeight + "px";
     }
   },
 
   mounted() {
-    // On initial load the scrollHeight might be off by a little, this delay fixes the calculation
-    setTimeout(() => {
-      this.onInput();
-    }, 100);
+    this.$nextTick(() => { this.onInput(); }); // Initialize
+
+    setInterval(this.onInput, 100); // Fixes inaccurate initial positions as a backup
   }
 }
 </script>

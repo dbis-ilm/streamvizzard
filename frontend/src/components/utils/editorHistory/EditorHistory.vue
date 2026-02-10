@@ -3,29 +3,31 @@
 </template>
 
 <script>
-import {EVENTS, registerEvent, unregisterEvent} from "@/scripts/tools/EventHandler";
+
+import {EVENTS, INTERACTION, registerEvent, unregisterEvent} from "@/scripts/tools/EventHandler";
 import {
-  AddNodeAction,
-  DragNodeAction, NodeChangeAction,
-  NodeParamChangeAction,
-  NodeNameChangeAction,
-  RemoveNodeAction, NodeSocketNameChangeAction, NodeResizeChangeAction
-} from "@/scripts/tools/editorHistory/NodeAction";
-import {AddConnectionAction, RemoveConnectionAction} from "@/scripts/tools/editorHistory/ConnectionAction";
+  AddOperatorAction,
+  DragOperatorCA,
+  OperatorParamCA,
+  OperatorNameCA,
+  RemoveOperatorAction, SocketNameCA, OperatorResizeCA, OperatorChangeAction
+} from "@/scripts/tools/editorHistory/OperatorAction";
 import {
-  AddGroupAction,
-  DragGroupAction, GroupChangeAction,
-  GroupNameChangeAction, GroupSizeChangeAction,
-  RemoveGroupAction
+  AddConnectionAction,
+  RemoveConnectionAction,
+  RerouteChangeAction
+} from "@/scripts/tools/editorHistory/ConnectionAction";
+import {
+  GroupChangeAction,
+  GroupMoveAction,
+  GroupNameChangeAction, GroupOperatorAdded, GroupOperatorRemoved,
 } from "@/scripts/tools/editorHistory/GroupAction";
 
 export default {
-  name: "EditorHistory",
-  props: {maxEvents: { required: true }, canUpdateEvent: {type: Function}, canAddEvent: {type: Function}, clearRedoOnNewEvent: {type: Boolean, default: true}},
+  props: {maxEvents: { required: true }, canUpdateEvent: {type: Function}, onEventAdded: {type: Function}, clearRedoOnNewEvent: {type: Boolean, default: true}},
 
   data() {
     return {
-      editor: null,
       undoEvents: [],
       redoEvents: [],
 
@@ -35,223 +37,140 @@ export default {
     }
   },
 
+  mounted() {
+    //Register all event listener
+
+    this._registerPipeline();
+    this._registerOperators();
+    this._registerConnections();
+    this._registerGroups();
+
+    this._registerEventListener(EVENTS.UI_HISTORY_TRAVERSE, (traversing, debugging) => {
+      this.silent = traversing;
+
+      if(debugging) this.clear(); // When traversing, no manual history should exist
+    });
+  },
+
   beforeDestroy() {
-    this.destroy();
+    for(let [, v] of Object.entries(this.eventRegistrationLookup))
+      unregisterEvent(v["event"], v["callback"]);
+
+    this.eventRegistrationLookup = {};
   },
 
   methods: {
-    initialize(editor) {
-      this.editor = editor;
-
-      //Register all event listener
-
-      this._registerPipeline();
-      this._registerNodes(editor);
-      this._registerConnections(editor);
-      this._registerGroups(editor);
-
-      this._registerEventListener(EVENTS.UI_HISTORY_TRAVERSE, (traversing, debugging) => {
-        this.silent = traversing;
-
-        if(debugging) this.clear(); // When traversing, no manual history should exist
-      });
-
-      this.clear();
-    },
-
-    destroy() {
-      if(this.editor == null) return;
-
-      for(let [, v] of Object.entries(this.eventRegistrationLookup)) {
-        let event = v["event"];
-        let callback = v["callback"];
-        let editor = v["editor"];
-
-        if(!editor) unregisterEvent(event, callback);
-        else { // .removeEventListener function available, do it manually
-          let eventArray = event.split(" ");
-          for(let event of eventArray) this.editor.events[event] = this.editor.events[event].filter(v => v !== callback);
-        }
-      }
-
-      this.eventRegistrationLookup = {};
-    },
-
-    // --------------------------------------------------------------------
-
     _registerPipeline() {
       this._registerEventListener(EVENTS.PIPELINE_LOADED, this.clear);
-      this._registerEventListener(EVENTS.CLEAR_PIPELINE, this.clear);
+      this._registerEventListener(EVENTS.PIPELINE_CLEARED, this.clear);
     },
 
-    _registerNodes(editor) {
-      this._registerEventListener(EVENTS.NODE_CREATE, (node) => {!this.silent ? this.addEvent(new AddNodeAction(editor, node)) : null});
-      this._registerEventListener(EVENTS.NODE_REMOVED, (node) => {!this.silent ? this.addEvent(new RemoveNodeAction(editor, node)) : null});
+    _registerOperators() {
+      this._registerEventListener(EVENTS.OP_CREATED, (op) => { this.addEvent(new AddOperatorAction(op)) });
+      this._registerEventListener(EVENTS.OP_REMOVED, (op) => { this.addEvent(new RemoveOperatorAction(op)) });
 
-      //No longer tracked
-      //editor.on('nodeMonitorStateChanged', ({node, state}) => {!this.silent ? this.addEvent(new CollapseNodeAction(editor, node, state)) : null})
+      this._registerEventListener(EVENTS.OP_PARAM_CHANGED, (op, param, oldVal) => { this.addEvent(new OperatorParamCA(op, param, oldVal)) });
 
-      // DRAG
+      this._registerEventListener(EVENTS.OP_NAME_CHANGED, (op, oldVal) => { this.addEvent(new OperatorNameCA(op, oldVal)) });
 
-      this._registerEventListener('nodetranslated', ({ node, prev }) => {
-        if(this.silent) return;
+      this._registerEventListener(EVENTS.OP_SOCKET_NAME_CHANGED, (op, socket, oldVal) => { this.addEvent(new SocketNameCA(op, socket, oldVal)) });
 
-        let lastElement = this.undoEvents[0];
+      // --- Change-Actions [Movement & Resize] ---
 
-        if (lastElement instanceof DragNodeAction && lastElement.nodeID === node.id
-            && !lastElement.closed && this._canUpdateEvent(lastElement)) lastElement.update(node);
+      // Close the last change when we re-select an operator [visual effect]
 
-        //Only add node drag event if node is not in group that is currently dragged
-        else if(!(lastElement instanceof DragGroupAction && !lastElement.closed && lastElement.getGroup().linkedTo(node)))
-          this.addEvent(new DragNodeAction(editor, node, prev));
-      }, true);
-
-      this._registerEventListener('nodeselected', (node) => {
-        if(this.silent) return;
+      this._registerEventListener(EVENTS.OP_INTERACTED, (op, interaction) => {
+        if (interaction !== INTERACTION.DRAG_START) return;
 
         let lastElement = this.undoEvents[0];
-
-        //Make sure that we start a new drag action once we (re)start dragging a node
-        if (lastElement instanceof DragNodeAction && lastElement.nodeID === node.id) lastElement.closed = true;
-      }, true);
-
-      // PARAMS
-
-      this._registerEventListener(EVENTS.NODE_PARAM_CHANGED, (node, ctrl, oldVal) => {
-        if(this.silent) return;
-
-        let lastElement = this.undoEvents[0];
-
-        if (lastElement instanceof NodeParamChangeAction && lastElement.nodeID === node.id
-            && lastElement.ctrlKey === ctrl.key && !lastElement.closed
-            && this._canUpdateEvent(lastElement)) lastElement.update(node);
-        else this.addEvent(new NodeParamChangeAction(editor, node, ctrl.key, oldVal));
+        if (lastElement instanceof OperatorChangeAction && lastElement.opID === op.id) lastElement.closed = true;
       });
 
-      // NAME
-
-      this._registerEventListener(EVENTS.NODE_NAME_CHANGED, (node, oldVal) => {
-        if(this.silent) return;
+      this._registerEventListener(EVENTS.OP_MOVED, (op, prev, cascaded) => {
+        if(cascaded) return; // Triggered by group movement -> skip here
 
         let lastElement = this.undoEvents[0];
 
-        if (lastElement instanceof NodeNameChangeAction && lastElement.nodeID === node.id
-            && !lastElement.closed && this._canUpdateEvent(lastElement)) lastElement.update(node);
-        else this.addEvent(new NodeNameChangeAction(editor, node, oldVal));
+        if (lastElement instanceof DragOperatorCA && lastElement.opID === op.id
+            && this._canUpdateEvent(lastElement)) lastElement.update(op);
+        else this.addEvent(new DragOperatorCA(op, prev));
+      });
+
+      this._registerEventListener(EVENTS.OP_RESIZED, (op, prev) => {
+        let lastElement = this.undoEvents[0];
+
+        if (lastElement instanceof OperatorResizeCA && lastElement.opID === op.id
+            && this._canUpdateEvent(lastElement)) lastElement.update(op);
+        else this.addEvent(new OperatorResizeCA(op, prev));
+      });
+    },
+
+    _registerConnections() {
+      this._registerEventListener(EVENTS.CONNECTION_CREATED, (con) => { this.addEvent(new AddConnectionAction(con)) });
+      this._registerEventListener(EVENTS.CONNECTION_REMOVED, (con) => { this.addEvent(new RemoveConnectionAction(con)) });
+
+      // All 'reroute' changes (pin addition, removal, dragging) are tracked as one!
+
+      this._registerEventListener(EVENTS.CONNECTION_REROUTES_CHANGED, (con, prevVal, cascaded) => {
+        if(cascaded) return; // Triggered by group movement -> skip here
+
+        let lastElement = this.undoEvents[0];
+
+        if (lastElement instanceof RerouteChangeAction && lastElement.connectionID === con.id &&
+            this._canUpdateEvent(lastElement)) lastElement.update(con);
+
+        this.addEvent(new RerouteChangeAction(con, prevVal));
       })
-
-      // SOCKET NAME
-
-      this._registerEventListener(EVENTS.NODE_SOCKET_NAME_CHANGED, (node, socket, oldVal) => {
-        if(this.silent) return;
-
-        let lastElement = this.undoEvents[0];
-
-        if (lastElement instanceof NodeSocketNameChangeAction && lastElement.nodeID === node.id
-            && lastElement.key === socket.key && !lastElement.closed
-            && this._canUpdateEvent(lastElement)) lastElement.update(socket);
-        else this.addEvent(new NodeSocketNameChangeAction(editor, node, socket, oldVal));
-      })
-
-      // Resize
-
-      this._registerEventListener('nodeResized', ({node, prev}) => {
-        if(this.silent) return;
-
-        let lastElement = this.undoEvents[0];
-
-        if (lastElement instanceof NodeResizeChangeAction && lastElement.nodeID === node.id
-            && !lastElement.closed && this._canUpdateEvent(lastElement)) lastElement.update(node);
-        else this.addEvent(new NodeResizeChangeAction(editor, node, prev));
-      }, true);
-
-      // Display Change - No longer tracked
-      //registerEvent(EVENTS.NODE_DISPLAY_CHANGED, (node, prev) => {!this.silent ? this.addEvent(new DisplayChangeNodeAction(editor, node, prev)) : null});
-
-      // ALL CHANGE EVENTS
-
-      //Mark change actions as done when node is deselected
-      this._registerEventListener('nodeSelectionCleared', () => {
-        if(this.silent) return;
-
-        let lastElement = this.undoEvents[0];
-        if (lastElement instanceof NodeChangeAction) lastElement.closed = true;
-      }, true);
     },
 
-    _registerConnections(editor) {
-      this._registerEventListener(EVENTS.CONNECTION_CREATED, (con) => {!this.silent ? this.addEvent(new AddConnectionAction(editor, con)) : null});
-      this._registerEventListener(EVENTS.CONNECTION_REMOVED, (con) => {!this.silent ? this.addEvent(new RemoveConnectionAction(editor, con)) : null});
-    },
+    _registerGroups() {
+      this._registerEventListener(EVENTS.GROUP_OP_ADDED, (g, op) => { this.addEvent(new GroupOperatorAdded(g, op)) });
+      this._registerEventListener(EVENTS.GROUP_OP_REMOVED, (g, op) => { this.addEvent(new GroupOperatorRemoved(g, op)) });
 
-    _registerGroups(editor) {
-      this._registerEventListener('commentcreated', (comment) => { !this.silent ? this.addEvent(new AddGroupAction(editor, comment)) : null}, true);
-      this._registerEventListener('commentremoved', (comment) => { !this.silent ? this.addEvent(new RemoveGroupAction(editor, comment)) : null}, true);
+      this._registerEventListener(EVENTS.GROUP_NAME_CHANGED, (group, oldVal) => { this.addEvent(new GroupNameChangeAction(group, oldVal)) });
 
-      //registerEvent(EVENTS.GROUP_COLLAPSED, (group, state) => {!this.silent ? this.addEvent(new CollapseGroupAction(editor, group, state)) : null})
+      // --- Change-Actions [Movement] ---
 
-      //Name Change
+      // Close the last group change event when we re-select a group [visual effect]
 
-      this._registerEventListener(EVENTS.GROUP_NAME_CHANGED, (comment, oldVal) => {
-        if(this.silent) return;
+      this._registerEventListener(EVENTS.GROUP_INTERACTED, (group, interaction) => {
+        if (interaction !== INTERACTION.DRAG_START) return;
 
         let lastElement = this.undoEvents[0];
-
-        if (lastElement instanceof GroupNameChangeAction && lastElement.getGroup().getID() === comment.getID()
-            && !lastElement.closed && this._canUpdateEvent(lastElement)) lastElement.update(comment);
-        else this.addEvent(new GroupNameChangeAction(editor, comment, oldVal));
+        if (lastElement instanceof GroupChangeAction && lastElement.groupID === group.id) lastElement.closed = true;
       });
 
-      //Size Change
-
-      this._registerEventListener(EVENTS.GROUP_SIZE_CHANGED, (comment, oldVal) => {
-        if(this.silent) return;
-
+      this._registerEventListener(EVENTS.GROUP_MOVED, (group, prevPos) => {
         let lastElement = this.undoEvents[0];
 
-        if (lastElement instanceof GroupSizeChangeAction && lastElement.getGroup().getID() === comment.getID()
-            && !lastElement.closed && this._canUpdateEvent(lastElement)) lastElement.update(comment);
-        else this.addEvent(new GroupSizeChangeAction(editor, comment, oldVal));
+        if (lastElement instanceof GroupMoveAction && lastElement.groupID === group.id
+            && this._canUpdateEvent(lastElement)) lastElement.update();
+        else this.addEvent(new GroupMoveAction(group, prevPos));
       });
 
-      // Movement
-
-      this._registerEventListener('commentMoved', ({comment, prev}) => {
-        if(this.silent) return;
-
-        let lastElement = this.undoEvents[0];
-
-        if (lastElement instanceof DragGroupAction && lastElement.getGroup().getID() === comment.getID()
-            && !lastElement.closed && this._canUpdateEvent(lastElement)) lastElement.update();
-        else this.addEvent(new DragGroupAction(editor, comment, prev));
-      }, true);
-
-      //Make sure that we close prev change actions when we select a node or click anywhere
-      this._registerEventListener('nodeselected click commentMoveStart', () => {
-        if(this.silent) return;
-
-        let lastElement = this.undoEvents[0];
-
-        if (lastElement instanceof GroupChangeAction) lastElement.closed = true;
-      }, true);
     },
 
-    _registerEventListener(event, callback, editorEvent=false) {
-      // Key changes datatype to string but events might be numbers aswell..
-      this.eventRegistrationLookup[event] = {"event": event, "editor": editorEvent, "callback": callback};
+    _registerEventListener(event, callback) {
+      this.eventRegistrationLookup[event] = {"event": event, "callback": callback};
 
-      if(!editorEvent) registerEvent(event, callback);
-      else this.editor.on(event, callback);
+      registerEvent(event, callback);
     },
 
+    /** @param {HistoryAction} event **/
     _canUpdateEvent(event) {
-      return this.canUpdateEvent == null || this.canUpdateEvent(event);
+
+      return !this.silent && !event.closed && (this.canUpdateEvent == null || this.canUpdateEvent(event));
     },
 
     // --------------------------------------------------------------------
 
+    /** @param {HistoryAction} event **/
     addEvent(event) {
-      if(this.canAddEvent != null && !this.canAddEvent(event)) return;
+      if(this.silent) return;
+
+      this.closeLastEvent();
+
+      if(this.onEventAdded != null) this.onEventAdded(event);
 
       this.undoEvents.unshift(event);
 
@@ -264,12 +183,16 @@ export default {
     async performUndo(prependRedo = true) {
       if (!this.hasUndo()) return;
 
+      this.closeLastEvent();
+
       let event = this.undoEvents.shift();
 
       this.silent = true;
-      await event.undo();
+      let hadEffect = await event.undo();
       if(prependRedo) this.redoEvents.unshift(event);
       this.silent = false;
+
+      return hadEffect;
     },
 
     async performRedo(prependUndo = true) {
@@ -278,21 +201,17 @@ export default {
       let event = this.redoEvents.shift();
 
       this.silent = true;
-      await event.redo();
+      let hadEffect = await event.redo();
       if(prependUndo) this.undoEvents.unshift(event);
       this.silent = false;
+
+      return hadEffect;
     },
 
-    getNextUndo() {
-      if(!this.hasUndo()) return null;
+    closeLastEvent() {
+      let lastElement = this.undoEvents[0];
 
-      return this.undoEvents[0];
-    },
-
-    getNextRedo() {
-      if(!this.hasRedo()) return null;
-
-      return this.redoEvents[0];
+      if(lastElement) lastElement.closed = true;
     },
 
     hasUndo() {
@@ -301,6 +220,14 @@ export default {
 
     hasRedo() {
       return this.redoEvents.length > 0;
+    },
+
+    peekNextUndo() {
+      return this.hasUndo() ? this.undoEvents[0] : null;
+    },
+
+    peekNextRedo() {
+      return this.hasRedo() ? this.redoEvents[0] : null;
     },
 
     clearRedo() {

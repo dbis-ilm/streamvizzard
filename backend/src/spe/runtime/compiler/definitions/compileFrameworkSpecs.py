@@ -112,7 +112,7 @@ __frameworks = [CompileFrameworkSpecs(CompileFramework.STREAMVIZZARD, StreamVizz
                                       [CompileComputeMode.CPU, CompileComputeMode.GPU],
                                       [
                                           FrameworkConnectorCfg(CompileFrameworkConnector.APACHE_KAFKA, True, True,
-                                                                kafkaConnectorParams, None)
+                                                                kafkaConnectorParams, None),
                                       ], True, supportedCheck=_flinkSupportedCheck, placementAdvisor=PyFlinkFA)]
 
 

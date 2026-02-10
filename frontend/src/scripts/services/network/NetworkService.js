@@ -2,21 +2,31 @@ import axios from "axios";
 import {registerDebuggerCMDs} from "@/scripts/services/network/commands/DebuggerCmds";
 import {registerMonitorCMDs} from "@/scripts/services/network/commands/MonitorCmds";
 import {registerPipelineCMDs} from "@/scripts/services/network/commands/PipelineCmds";
-import {PipelineService, PIPELINE_STATUS} from "@/scripts/services/pipelineState/PipelineService";
-import {Service} from "@/scripts/services/Services";
+import {PIPELINE_STATUS} from "@/scripts/pipeline/Pipeline";
 import {EVENTS, executeEvent} from "@/scripts/tools/EventHandler";
+import {Service} from "@/scripts/services/Service";
+import {Services} from "@/scripts/services/Services";
+import {SvInstance} from "@/scripts/StreamVizzard";
 
 const API_PATH = "http://localhost:8000";
 const SOCKET_PATH = "ws://localhost:8001";
 
 
-class _NetworkService extends Service {
+export class NetworkService extends Service {
     constructor() {
         super("NetworkService");
 
         this.socketCon = null;
 
         this.commands = new Map();
+    }
+
+    onInitialize() {
+        super.onInitialize();
+
+        registerDebuggerCMDs(this);
+        registerMonitorCMDs(this);
+        registerPipelineCMDs(this);
     }
 
     registerCommand(command) {
@@ -41,23 +51,23 @@ class _NetworkService extends Service {
 
             this.socketCon.onclose = function() {
                 //If server closed the connection
-                NetworkService.socketCon = null;
+                Services.Network.socketCon = null;
 
-                PipelineService.setPipelineStatus(PIPELINE_STATUS.STOPPED);
+                SvInstance.pipeline.setPipelineStatus(PIPELINE_STATUS.STOPPED);
 
                 executeEvent(EVENTS.DISCONNECTED);
             }
         }
     }
 
-    async startPipeline(data) {
+    async startPipeline(runtimeConfig) {
         this._assureSocket();
 
-        return await this.apiSend(API_PATH + "/startPipeline", data).then();
+        return await this.apiSend(API_PATH + "/startPipeline", runtimeConfig).then();
     }
 
-    stopPipeline(data) {
-        this.apiSend(API_PATH + "/stopPipeline", data).then();
+    stopPipeline() {
+        this.apiSend(API_PATH + "/stopPipeline", "").then();
     }
 
     changeMonitorConfig(data) {
@@ -118,10 +128,10 @@ class _NetworkService extends Service {
 
     // ---------- -------------------------------- ----------
 
-    async simulate(pipelineData, simulateData, startMetaData) {
+    async simulate(runtimeConfig, simulateData) {
         this._assureSocket();
 
-        return await this.apiSend(API_PATH + "/simulate", {"pipeline": pipelineData, "simulateData": simulateData, "meta": startMetaData}).then();
+        return await this.apiSend(API_PATH + "/simulate", {"runtimeConfig": runtimeConfig, "simulateData": simulateData}).then();
     }
 
     // --------------------- Compilation ---------------------
@@ -166,9 +176,3 @@ class _NetworkService extends Service {
         });
     }
 }
-
-export const NetworkService = new _NetworkService();
-
-registerDebuggerCMDs();
-registerMonitorCMDs();
-registerPipelineCMDs();

@@ -15,9 +15,10 @@ The recorded LWIR image data is ingested using a `Read Folder source`, which rea
 2) `streamVizzardPipeline.json`: StreamVizzard pipeline save file to be loaded from the Webinterface
 3) `cnn.hdf5` and `lstm.hdf5`: Trained neuronal networks for the weld prediction
 4) `generatedFlink.py`: Example generated Flink sub-pipeline file to be executed on a Flink cluster
-5) `generatedSv.py`: Example generated StreamVizzard sub-pipeline file to be executed on the StreamVizzard engine
-6) `output_sv.txt`: Example data sink output file for an execution of the StreamVizzard pipeline
-7) `output_flink_5para.txt`: Example data sink output file for an execution of the Flink pipeline with a parallelism of 5
+5) `expertFlink.py`: The constructed manual Flink pipeline by an expert user
+6) `generatedSv.py`: Example generated StreamVizzard sub-pipeline file to be executed on the StreamVizzard engine
+7) `output_sv.txt`: Example data sink output file for an execution of the StreamVizzard pipeline
+8) `output_flink_5para.txt`: Example data sink output file for an execution of the Flink pipeline with a parallelism of 5
 
 ## Data Preparation
 

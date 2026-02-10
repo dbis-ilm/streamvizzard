@@ -45,10 +45,10 @@
 import {EVENTS, registerEvent} from "@/scripts/tools/EventHandler";
 import SimulationSourceConfig from "@/components/features/simulator/SimulationSourceConfig.vue";
 import {safeVal} from "@/scripts/tools/Utils";
-import {DataExportService} from "@/scripts/services/dataExport/DataExportService";
-import {PipelineService, PIPELINE_STATUS} from "@/scripts/services/pipelineState/PipelineService";
-import {NetworkService} from "@/scripts/services/network/NetworkService";
-import {system} from "@/main";
+import {PIPELINE_STATUS} from "@/scripts/pipeline/Pipeline";
+import {Services} from "@/scripts/services/Services";
+import {SvInstance} from "@/scripts/StreamVizzard";
+import {Modal, MODALS} from "@/scripts/interface/Interface";
 
 export default {
   name: 'PipelineSimulationModal',
@@ -88,13 +88,13 @@ export default {
     show () {
       this.sources = [];
 
-      for(let op of PipelineService.getAllOperators()) {
-        if(op.component.source) {
+      for(let op of SvInstance.pipeline.operators) {
+        if(op.definition.source) {
 
           let rate = 15;
           let data = null;
           let custom = "";
-          let sockets = op.outputs.size;
+          let sockets = op.outputs.length;
 
           if(this.lastSourceConfigData != null) {
             for(let cfg of this.lastSourceConfigData) {
@@ -108,7 +108,7 @@ export default {
             }
           }
 
-          this.sources.push({"name": op.viewName, "id": op.id, "rate": rate, "data": data, "custom": custom, "sockets": sockets});
+          this.sources.push({"name": op.name, "id": op.id, "rate": rate, "data": data, "custom": custom, "sockets": sockets});
         }
       }
       this.$modal.show('PipelineSimulationModal');
@@ -133,7 +133,7 @@ export default {
       // Construct meta data
 
       let opRealNameLookup = {};
-      for(let op of PipelineService.getAllOperators()) opRealNameLookup["" + op.id] = op.viewName;
+      for(let op of SvInstance.pipeline.operators) opRealNameLookup["" + op.id] = op.name;
 
       let meta = {"realOpNames": opRealNameLookup, "costModelPath": this.costModelPath};
 
@@ -149,14 +149,14 @@ export default {
     },
 
     _startSimulation(simulateData) {
-      if(!PipelineService.isPipelineStopped()) return;
+      if(!SvInstance.pipeline.isPipelineStopped()) return;
 
-      for (let v of PipelineService.getAllOperators()) v.component.reset(v);
+      for (let v of SvInstance.pipeline.operators) v.resetState();
 
-      PipelineService.setPipelineStatus(PIPELINE_STATUS.STARTING);
+      SvInstance.pipeline.setPipelineStatus(PIPELINE_STATUS.STARTING);
 
-      NetworkService.simulate(PipelineService.createPipelineData(), simulateData, system.getStartMetaData()).then((res) => {
-        if((res === null || !res["res"]) && PipelineService.isPipelineStarting()) PipelineService.setPipelineStatus(PIPELINE_STATUS.STOPPED);
+      Services.Network.simulate(SvInstance.getRuntimeConfig(), simulateData).then((res) => {
+        if((res === null || !res["res"]) && SvInstance.pipeline.isPipelineStarting()) SvInstance.pipeline.setPipelineStatus(PIPELINE_STATUS.STOPPED);
         //TODO: Could show error (res["error"]) here
       });
     },
@@ -200,9 +200,11 @@ export default {
   mounted() {
     this.reset();
 
-    DataExportService.registerDataExporter("simulator", this._getSaveData, this._loadSaveData);
+    Services.DataExporter.registerDataExporter("simulator", this._getSaveData, this._loadSaveData);
 
-    registerEvent(EVENTS.CLEAR_PIPELINE, this.reset);
+    registerEvent(EVENTS.PIPELINE_CLEARED, this.reset);
+
+    this.$streamvizzard.interface.registerModal(new Modal(MODALS.SIMULATE_PIPELINE, this.show, this.hide));
   }
 }
 </script>

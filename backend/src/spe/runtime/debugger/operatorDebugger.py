@@ -122,7 +122,7 @@ class OperatorDebugger:
         self._breakPoints.clear()
 
         for d in bp:
-            p = DebugBreakpoint(d["enabled"], DebugStepType.parse(d["type"]), d["amount"])
+            p = DebugBreakpoint(d["id"], d["enabled"], DebugStepType.parse(d["type"]), d["amount"])
 
             lis = self._breakPoints.get(p.stepType)
 
@@ -141,7 +141,8 @@ class OperatorDebugger:
                 continue
 
             for bp in bpList:
-                bps.append({"enabled": bp.enabled,
+                bps.append({"id": bp.id,
+                            "enabled": bp.enabled,
                             "type": bp.stepType.name,
                             "amount": bp.amount})
 
@@ -161,7 +162,7 @@ class OperatorDebugger:
                 p = bp[i]
 
                 if p.isTriggered(stepType, amount):
-                    getDebugger().triggerBreakpoint(ds, i)
+                    getDebugger().triggerBreakpoint(ds, p.id)
 
                     break
 

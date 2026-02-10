@@ -5,7 +5,8 @@ import VueAce from "@aminoeditor/vue-ace";
 import vSelect from "vue-select";
 import VModal from 'vue-js-modal';
 import VueSlider from 'vue-slider-component'
-import autoBlur from './scripts/directives/autoBlurInputDirective';
+import autoBlur from '@/scripts/tools/directives/AutoBlurInputDirective';
+import draggable from "@/scripts/tools/directives/DraggableDirective";
 
 Vue.config.productionTip = false;
 
@@ -26,6 +27,10 @@ Vue.use(VModal);
 Vue.component("vue-slider", VueSlider);
 
 Vue.directive('auto-blur', autoBlur);
+Vue.directive('draggable', draggable);
+
+import {SvInstance} from "@/scripts/StreamVizzard";
+Vue.prototype.$streamvizzard = SvInstance;
 
 import "@fontsource/noto-sans";
 
@@ -34,10 +39,4 @@ require("jquery-ui/ui/widgets/resizable");
 require("jquery-ui/themes/base/all.css");
 require('bootstrap-icons/font/bootstrap-icons.css');
 
-export let system= Main;
-
-export function initializeSystem(ref) {system = ref;}
-
-new Vue({
-  render: h => h(Main),
-}).$mount('#app')
+new Vue({render: h => h(Main),}).$mount('#app');

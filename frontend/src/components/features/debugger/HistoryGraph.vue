@@ -23,11 +23,9 @@
 
 <script>
 
-
 import {distance, formatTime, makeGenericResizable} from "@/scripts/tools/Utils";
 import $ from "jquery";
-import {system} from "@/main";
-import {synchronizeExecution} from "@/scripts/tools/debugger/DebuggingUtils";
+import {synchronizeExecution} from "@/scripts/features/debugger/DebuggingUtils";
 
 class HistoryBranch {
   constructor(id, depth, parent, startTime, endTime, stepCount, stepOffset, lineObj, container) {
@@ -586,6 +584,7 @@ export default {
 
       currentBranchID: -1,
       currentStepID: -1,
+      currentStepTime: 0,
       currentTargetStepID: -1, // Requested step from server
       currentTargetBranchID: -1,
       isWaitingForTarget: false,
@@ -645,7 +644,7 @@ export default {
 
     $(this.$el).on('mousemove', '.historyGraphBranchOv', async function(event){
       await synchronizeExecution(async () => {
-        if(!ths._canInteractWithHistory() || !system.debuggerAllowHistoryPreview) return;
+        if(!ths._canInteractWithHistory() || !ths.$streamvizzard.debugger.allowHistoryPreview) return;
 
         let rct = event.currentTarget.getBoundingClientRect();
         let xPercentagePos = (event.clientX - rct.left) / rct.width;
@@ -734,6 +733,7 @@ export default {
       this.timeLineStart = -1;
       this.timeLineEnd = 0;
       this.currentStepID = -1;
+      this.currentStepTime = 0;
       this.currentBranchID = -1;
       this.currentTargetStepID = - 1;
       this.currentTargetBranchID = -1;
@@ -767,6 +767,7 @@ export default {
       let newBranch = this._switchBranch(branchID, stepTime);
 
       this.currentStepID = stepID;
+      this.currentStepTime = stepTime;
 
       if(this.isWaitingForTarget) {
         this.isWaitingForTarget = this.currentStepID !== this.currentTargetStepID || this.currentBranchID !== this.currentTargetBranchID;
@@ -816,8 +817,15 @@ export default {
       this.$emit("onBranchTraversal", branchID, stepID, null, branch.stepCount);
     },
 
-    getCurrentDeltaTime(currentTime) {
-      return Math.max(0, this.timeLineEnd - currentTime);
+    getCurrentDeltaTime() {
+      return Math.max(0, this.timeLineEnd - this.currentStepTime);
+    },
+
+    getCurrentBranchData() {
+      let branch = this.branches[this.currentBranchID];
+      if(branch == null) return null;
+
+      return {"stepID": this.currentStepID, "stepCount": branch.stepCount, "offset": branch.stepOffset };
     },
 
     getStepOffsetForBranch(branchID) {

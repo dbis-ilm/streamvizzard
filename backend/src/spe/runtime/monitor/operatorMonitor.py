@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import json
-from typing import TYPE_CHECKING, Optional
+import math
+from typing import TYPE_CHECKING, Optional, Dict
 
 from spe.runtime.debugger.debugTuple import DebugTuple
 from spe.runtime.debugger.debuggingUtils import retrieveStoredDTRef
 from spe.runtime.debugger.history.historyState import HistoryState
 from spe.runtime.monitor.operatorMonitorData import OperatorMonitorData
-from spe.runtime.monitor.operatorMonitorTuple import OperatorMonitorTuple
 from spe.runtime.runtimeGateway import getRuntimeManager
 from spe.common.tuple import Tuple
 from streamVizzard import StreamVizzard
@@ -18,7 +17,32 @@ if TYPE_CHECKING:
 
 
 class OperatorMonitor:
+    class Entry:
+        def __init__(self, executionDuration: float, outputSize: int):
+            self.executionDuration = executionDuration  # In ms
+            self.outputSize = outputSize  # In bytes
+
+            self.prevAvgExecutionDuration = 0  # Calculated
+            self.prevAvgDataSize = 0  # Calculated
+
+        def __eq__(self, other):
+            return (math.isclose(self.executionDuration, other.executionDuration)
+                    and math.isclose(self.prevAvgExecutionDuration, other.prevAvgExecutionDuration)
+                    and math.isclose(self.prevAvgDataSize, other.prevAvgDataSize)
+                    and self.outputSize == other.outputSize)
+
+        def __hash__(self):
+            return id(self)
+
+        def toJSON(self):
+            return {"exDuration": self.executionDuration,
+                    "outputSize": self.outputSize,
+                    "prevAvgExecutionDuration": self.prevAvgExecutionDuration,
+                    "prevAvgDataSize": self.prevAvgDataSize}
+
     def __init__(self, operator: Operator):
+        self.SMOOTH = StreamVizzard.getConfig().MONITORING_OPERATOR_SMOOTH_FACTOR
+
         self._monitor = getRuntimeManager().gateway.getMonitor()
 
         self._operator = operator
@@ -39,19 +63,13 @@ class OperatorMonitor:
         # Register listener
         self._operator.getEventListener().register(self._operator.EVENT_TUPLE_PROCESSED, self._onTupleProcessed)
 
-    def setCtrlData(self, data: json):
-        if data is not None:
-            self.configureDataSend(data["state"]["sendData"])
+    def setConfig(self, data: Dict):
+        self.configureDataSend(data.get("enabled", self._sendData))
 
-            if data["dMode"] is not None:
-                self._setDisplayMode(data["dMode"])
+        displayCfg = data.get("displayConfig")
 
-    def getCtrlData(self) -> dict:
-        return {"state": {"sendData": self._sendData},
-                "dMode": {"socket": self.data.getDisplaySocket(),
-                          "mode": self.data.getDisplayMode(),
-                          "inspect": self.data.getInspectData(),
-                          "settings": self.data.getSettings()}}
+        if displayCfg is not None:
+            self.data.setConfig(displayCfg)
 
     def notifyError(self, errorMsg: Optional[str]):
         # If error is None, the UI is informed to clear to error
@@ -87,13 +105,13 @@ class OperatorMonitor:
             if dt is not None and self._currentTuple is not None:
                 dt.registerAttribute("opMon_prevTup", self._currentTuple.uuid)
 
-            self._registerTuple(OperatorMonitorTuple(max(0, executionDuration * 1000), tupleIn.calcMemorySize()), dt)
+            self._registerTuple(OperatorMonitor.Entry(max(0, executionDuration * 1000), tupleIn.calcMemorySize()), dt)
 
         self._currentTuple = tupleIn
 
         self._monitor.onTupleProcess(self._operator)
 
-    def _registerTuple(self, t: OperatorMonitorTuple, dt: Optional[DebugTuple]):
+    def _registerTuple(self, t: OperatorMonitor.Entry, dt: Optional[DebugTuple]):
         self._updateInternalStats(t, True)
 
         if dt is not None:
@@ -106,10 +124,8 @@ class OperatorMonitor:
 
         self._updateInternalStats(elmToRemove, False)
 
-    def _updateInternalStats(self, t: OperatorMonitorTuple, add: bool):
+    def _updateInternalStats(self, t: OperatorMonitor.Entry, add: bool):
         # Exponential Moving Average, no need to remove the oldest values since their influence diminishes over time
-
-        SMOOTH = StreamVizzard.getConfig().MONITORING_OPERATOR_SMOOTH_FACTOR
 
         if add:
             self._totalTuples += 1
@@ -118,13 +134,13 @@ class OperatorMonitor:
             t.prevAvgDataSize = self._avgDataSize
 
             if self._totalTuples > 1:  # Can only apply EMA if we already have a value
-                self._avgExecutionTime = SMOOTH * t.executionDuration + (1 - SMOOTH) * self._avgExecutionTime
-                self._avgDataSize = SMOOTH * t.outputSize + (1 - SMOOTH) * self._avgDataSize
+                self._avgExecutionTime = self.SMOOTH * t.executionDuration + (1 - self.SMOOTH) * self._avgExecutionTime
+                self._avgDataSize = self.SMOOTH * t.outputSize + (1 - self.SMOOTH) * self._avgDataSize
             else:
                 self._avgExecutionTime = t.executionDuration
                 self._avgDataSize = t.outputSize
 
-        else:  # Revert the addition of the recent element
+        else:  # Revert the addition of the recent element [since EMA can't be undone]
             self._totalTuples -= 1
 
             self._avgExecutionTime = t.prevAvgExecutionDuration
@@ -142,19 +158,14 @@ class OperatorMonitor:
     def getAvgDataSize(self):
         return self._avgDataSize
 
+    def getTotalTuples(self):
+        return self._totalTuples
+
     def getMonitor(self) -> PipelineMonitor:
         return self._monitor
-
-    def isDataEnabled(self) -> bool:
-        return self._sendData
 
     def configureDataSend(self, send: bool):
         self._sendData = send
 
-    def _setDisplayMode(self, changeData):
-        newSocket = changeData["socket"]
-        newMode = changeData["mode"]
-        newInspect = changeData["inspect"]
-        newSettings = changeData["settings"]
-
-        self.data.setDisplayMode(newSocket, newMode, newInspect, newSettings)
+    def isSendingData(self):
+        return self._sendData

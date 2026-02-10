@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 class PipelineDataAnalyzer:
     def __init__(self):
-        self._trackData = True
+        self._trackData = False
 
         self._opData: Dict[int, List[PipelineDataAnalyzer.TrackedData]] = dict()
 
@@ -176,7 +176,7 @@ class PipelineDataAnalyzer:
 
         for inp in op.inputs:
             for con in inp.getConnections():
-                inTps.append(con.getMonitor().throughput)
+                inTps.append(con.getMonitor().getAvgThroughput())
 
         # IN DataSize
 
@@ -201,7 +201,7 @@ class PipelineDataAnalyzer:
         for outP in op.outputs:
             for con in outP.getConnections():
                 # Should be same for all OUT connections -> take max val
-                outTp = max(con.getMonitor().throughput, outTp)
+                outTp = max(con.getMonitor().getAvgThroughput(), outTp)
 
         # OUT DataSize
 

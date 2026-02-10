@@ -1,7 +1,6 @@
 from __future__ import annotations
 import asyncio
 import logging
-import sys
 import traceback
 import uuid
 from asyncio import Future
@@ -24,6 +23,7 @@ from spe.common.timer import Timer
 from spe.common.tuple import Tuple
 from streamVizzard import StreamVizzard
 from utils.messages import Messages
+from utils.utils import extractTracebackErrorMsg
 
 if TYPE_CHECKING:
     from spe.pipeline.connection import Connection
@@ -134,27 +134,14 @@ class Operator(ABC, IEventEmitter):
         self._messageBroker.setupMessageQueues()
 
     def onExecutionError(self, error: Optional[str] = None, showErrorLine: bool = False):
-        T, V, TB = sys.exc_info()
-
-        # Extract error msg from exception if error txt is not set
         if error is None:
-            tb = traceback.extract_tb(TB)
-            res = traceback.format_exception_only(T, V)
+            error = extractTracebackErrorMsg(showErrorLine, True)
 
-            error = res[len(res) - 1] + "\n".join(res[:len(res) - 1])
-
-            if showErrorLine:
-                error = "[Line " + str(tb[-1].lineno) + "] " + error
-
-        self._currentError = error
+        self._currentError = error.strip()
 
         # Send error
         if self._monitor is not None:
-            self._monitor.notifyError(error)
-
-        # Print exception
-        if T is not None:
-            logging.log(logging.ERROR, traceback.format_exc())
+            self._monitor.notifyError(self._currentError)
 
     def clearExecutionError(self):
         self._updateError(None)
@@ -171,42 +158,24 @@ class Operator(ABC, IEventEmitter):
     def exportOperatorData(self) -> dict:
         from spe.pipeline.operators.operatorDB import getPathByOperator
 
-        def getID(operator: Operator):
-            return {"id": operator.id, "path": getPathByOperator(type(operator)), "uuid": operator.uuid}
-
         # Inputs / Outputs
 
-        inputs = []
-        outputs = []
+        inputs = [sock.id for sock in self.inputs]
+        outputs = [sock.id for sock in self.outputs]
 
-        for sock in self.inputs:
-            connected = []
+        return {"id": self.id,
+                "uuid": self.uuid,
+                "definition": getPathByOperator(type(self)),
+                "showData": self.getMonitor().isSendingData() if self.getMonitor() is not None else False,
+                "breakpoints": self.getDebugger().exportBreakpoints() if self.getDebugger() is not None else None,
+                "sockets": {"inputs": inputs, "outputs": outputs},
+                "params": self.getData()}
 
-            for con in sock.getConnections():
-                connected.append({"socket": con.output.id, "component": getID(con.output.op), "id": con.id})
-
-            inputs.append({"socket": sock.id, "connected": connected})
-
-        for sock in self.outputs:
-            connected = []
-
-            for con in sock.getConnections():
-                connected.append({"socket": con.input.id, "component": getID(con.input.op), "id": con.id})
-
-            outputs.append({"socket": sock.id, "connected": connected})
-
-        return {"id": getID(self),
-                "inputs": inputs,
-                "outputs": outputs,
-                "data": self.getData(),
-                "monitor": self.getMonitor().getCtrlData() if self.getMonitor() is not None else None,
-                "breakpoints": self.getDebugger().exportBreakpoints() if self.getDebugger() is not None else None}
-
-    def setMonitorData(self, monitorData):
+    def setMonitorData(self, monitorData: Optional[Dict]):
         if self.getMonitor() is not None and monitorData is not None:
-            self.getMonitor().setCtrlData(monitorData)
+            self.getMonitor().setConfig(monitorData)
 
-    def setBreakpointData(self, breakpointData):
+    def setBreakpointData(self, breakpointData: Optional[Dict]):
         if self.getDebugger() is not None and breakpointData is not None:
             self.getDebugger().registerBreakpoints(breakpointData)
 
@@ -567,6 +536,7 @@ class Operator(ABC, IEventEmitter):
     def _performExecute(self, inputData: Tuple) -> tuple[Optional[Tuple], float]:
         start = Timer.currentRealTime()
 
+        # TODO: Experiment with Python 3.14 thread-free execution mode!
         outputData = self._execute(inputData)
 
         end = Timer.currentRealTime()

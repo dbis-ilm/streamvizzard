@@ -111,6 +111,4 @@ The Kafka producer should therefore only start when the Flink job is running and
 For most representative results, the pipelines should be executed for a suitable amount of time to reduce the impact of pipeline warmup effects.
 Moreover, for comparable performance results, the data sources in the StreamVizzard pipeline should feature the same rates as during the Flink execution.
 
-To quickly execute the evaluation, the provided example StreamVizzard _output_sv.txt_ and Flink _output_flink_5para.txt_ output files in the scenario sub-folders can be employed.
-
-Depending on the utilized data scenario, the sliding window size might need to be adapted for reasonable results.
+To quickly execute the evaluation, the provided example StreamVizzard _output_sv.txt_ and Flink _output_flink_5para.txt_ output files in the laser-welding or energyMarket scenario sub-folders can be employed.

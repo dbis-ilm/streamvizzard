@@ -2,10 +2,10 @@
   <div class="context-menu"
        ref="menu"
        v-if="visible"
-       v-bind:style="style"
        @mouseleave="timeoutHide()"
        @mouseover="cancelHide()"
-       @contextmenu.prevent="">
+       @contextmenu.prevent=""
+       :style="'left: ' + menu.posX + 'px; top: ' + menu.posY + 'px;'">
     <Search ref="search" v-if="searchBar" v-model="filter" @search="onSearch"></Search>
     <Item v-for="item in filtered"
           :key="item.title"
@@ -21,15 +21,16 @@ import hideMixin from './debounceHide'
 import Item from './Item.vue';
 import Search from './Search.vue';
 import { fitViewport } from '../utils';
-import {EditorInputManager} from "@/scripts/services/EditorInputManager";
+import {Services} from "@/scripts/services/Services";
+import {ContextMenu} from "@/scripts/editor/ContextMenu";
 
 export default {
-  props: { searchBar: Boolean, searchKeep: Function },
+  props: { menu: ContextMenu, delay: Number },
   mixins: [hideMixin('hide')],
   data() {
     return {
-      x: 0,
-      y: 0,
+      searchBar: false,
+      searchKeep: () => false,
       visible: false,
       args: {},
       filter: '',
@@ -40,13 +41,8 @@ export default {
       searchElementStripped: false
     }
   },
+
   computed: {
-    style() {
-      return {
-        top: this.y+'px',
-        left: this.x+'px'
-      }
-    },
     filtered() {
       if(!this.filter) return this.items;
       const regex = new RegExp(this.filter, 'i');
@@ -79,22 +75,7 @@ export default {
     onSearch(e) {
       this.filter = e;
     },
-    show(x, y, args = {}) {
-      this.initial = false;
-      this.visible = true;
-      this.x = x;
-      this.y = y;
-      this.args = args;
 
-      this.cancelHide();
-
-      EditorInputManager.onInputSelected(this.$el);
-    },
-    hide() {
-      this.visible = false;
-
-      EditorInputManager.onInputDeselected(this.$el);
-    },
     additem(title, onClick, path = []) {
       let items = this.items;
       for(let level of path) {
@@ -110,6 +91,10 @@ export default {
 
       items.push({ title, onClick });
     },
+
+    hide() {
+      this.$streamvizzard.editor.closeContextMenu(this.menu);
+    }
   },
   updated() {
     if(this.$refs.menu && !this.initial) {
@@ -118,10 +103,25 @@ export default {
     }
   },
   mounted() {
-    this.$root.$on('show', this.show);
-    this.$root.$on('hide', this.hide);
-    this.$root.$on('additem', this.additem);
+    this.searchBar = this.menu.showSearchbar;
+
+    for(let item of this.menu.items) this.additem(...item);
+
+    this.initial = false;
+    this.visible = true;
+    this.args = {};
+
+    this.$root.$on('hide', this.hide); // Called by items on click
+
+    this.cancelHide();
+
+    Services.EditorInputManager.onInputSelected(this.$el);
   },
+
+  beforeDestroy() {
+    Services.EditorInputManager.onInputDeselected();
+  },
+
   components: {
     Item,
     Search

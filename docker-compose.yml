@@ -22,8 +22,8 @@ services:
       args:
         <<: *sv-args
     volumes: 
-      - /local/mount/folder:/home/streamvizzard  # Accessible files to the container
-      - /local/mount/folder:/opt/streamvizzard/out  # Generated output files by the container
+      - ./data/:/home/streamvizzard  # Accessible files to the container
+      - ./backend/out/:/opt/streamvizzard/out  # Generated output files by the container
     environment:
       <<: *sv-args
       DOCKER_BUILDKIT: "1"

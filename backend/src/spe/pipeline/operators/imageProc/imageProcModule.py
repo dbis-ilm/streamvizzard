@@ -25,6 +25,7 @@ class ImageProcModule(Module):
         self.registerOp("spe.pipeline.operators.imageProc.operators.process.threshold", "Threshold", "Operators/Process/Threshold")
         self.registerOp("spe.pipeline.operators.imageProc.operators.transform.convert", "Convert", "Operators/Transform/Convert")
         self.registerOp("spe.pipeline.operators.imageProc.operators.process.eqHistogram", "EqHistogram", "Operators/Process/EqHistogram")
+        self.registerOp("spe.pipeline.operators.imageProc.operators.process.calcHistogram", "CalcHistogram", "Operators/Process/CalcHistogram")
         self.registerOp("spe.pipeline.operators.imageProc.operators.transform.imgSplit", "ImgSplit", "Operators/Transform/ImgSplit")
         self.registerOp("spe.pipeline.operators.imageProc.operators.transform.extractROI", "ExtractROI", "Operators/Transform/ExtractROI")
         self.registerOp("spe.pipeline.operators.imageProc.operators.process.gaussianBlur", "GaussianBlur", "Operators/Process/GaussianBlur")
@@ -77,10 +78,6 @@ class ImageProcModule(Module):
                 if "h" in settings:
                     h = max(1, math.floor(settings["h"]))
             mat = cv2.resize(mat, (w, h))  # Creates a copy since dst is not set
-
-            if "mult" in settings and settings["mult"] is not None:
-                mul = settings["mult"]
-                mat = mat * mul
 
             # Convert to uint8 to display
             if mat.dtype != 'uint8':

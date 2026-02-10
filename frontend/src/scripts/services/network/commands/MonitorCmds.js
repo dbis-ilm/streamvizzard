@@ -1,28 +1,18 @@
 import {Command} from "@/scripts/services/network/commands/Command";
-import {EVENTS, executeEvent} from "@/scripts/tools/EventHandler";
-import {system} from "@/main";
-import {PipelineService} from "@/scripts/services/pipelineState/PipelineService";
-import {NetworkService} from "@/scripts/services/network/NetworkService";
+import {onConnectionDataUpdate} from "@/scripts/features/monitor/ConnectionMonitor";
+import {onOperatorDataUpdate, onOperatorHeatmapUpdate, onOperatorMessageBrokerUpdate} from "@/scripts/features/monitor/OperatorMonitor";
+import {SvInstance} from "@/scripts/StreamVizzard";
 
 class OpMonitorDataCMD extends Command {
     constructor() {
         super("opMonitorData");
     }
 
-    setOpData(opID, opData) {
-        let op = PipelineService.getOperatorByID(opID);
-
-        if(op != null) op.component.setValue(op, opData);
-    }
-
     handleCommand(data) {
         for(let i = 0; i < data["ops"].length; i++) {
             const entry = data["ops"][i];
 
-            const opID = entry["id"];
-            const opData = entry["data"];
-
-            this.setOpData(opID, opData);
+            onOperatorDataUpdate(entry);
         }
     }
 }
@@ -34,7 +24,7 @@ class ConMonitorDataCMD extends Command {
 
     handleCommand(data) {
         for(let i = 0; i < data["cons"].length; i++)
-            executeEvent(EVENTS.CONNECTION_DATA_UPDATED, data["cons"][i]);
+            onConnectionDataUpdate(data["cons"][i]);
     }
 }
 
@@ -44,13 +34,8 @@ class OpMsgBrokerDataCMD extends Command {
     }
 
     handleCommand(data) {
-        for(let op of data["ops"]) {
-            let opID = op["id"];
-
-            let opNode = PipelineService.getOperatorByID(opID);
-
-            if(opNode != null) opNode.component.setMessageBrokerState(opNode, op["broker"]);
-        }
+        for(let opData of data["ops"])
+            onOperatorMessageBrokerUpdate(opData);
     }
 }
 
@@ -60,11 +45,11 @@ class OpErrorDataCMD extends Command {
     }
 
     handleCommand(data) {
-        let op = PipelineService.getOperatorByID(data["op"]);
+        let op = SvInstance.pipeline.getOperatorByID(data["op"]);
 
         // Error might be null to signal, that the error was resolved
 
-        if(op != null) op.component.setError(op, data["error"]);
+        if(op != null) op.errorMsg = data["error"];
     }
 }
 
@@ -75,19 +60,17 @@ class HeatmapDataCMD extends Command {
 
     handleCommand(data) {
         for(const op of data["ops"]) {
-            let opNode = PipelineService.getOperatorByID(op["op"]);
-
-            if(opNode != null) opNode.component.setHeatmapRating(opNode, op["rating"]);
+            onOperatorHeatmapUpdate(op);
         }
 
-        system.$refs.heatmap.onDataUpdate(data["min"], data["max"], data["steps"]);
+        SvInstance.monitor.heatmapData = data;
     }
 }
 
-export function registerMonitorCMDs() {
-    NetworkService.registerCommand(new OpMonitorDataCMD());
-    NetworkService.registerCommand(new ConMonitorDataCMD());
-    NetworkService.registerCommand(new OpMsgBrokerDataCMD());
-    NetworkService.registerCommand(new OpErrorDataCMD());
-    NetworkService.registerCommand(new HeatmapDataCMD());
+export function registerMonitorCMDs(service) {
+    service.registerCommand(new OpMonitorDataCMD());
+    service.registerCommand(new ConMonitorDataCMD());
+    service.registerCommand(new OpMsgBrokerDataCMD());
+    service.registerCommand(new OpErrorDataCMD());
+    service.registerCommand(new HeatmapDataCMD());
 }

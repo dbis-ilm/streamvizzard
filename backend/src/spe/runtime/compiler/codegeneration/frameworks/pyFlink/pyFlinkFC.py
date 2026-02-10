@@ -23,7 +23,7 @@ from spe.runtime.compiler.codegeneration.frameworks.pyFlink.pyFlinkStatics impor
     pyFlinkReorderEventsOpAssign, pyFlinkJoinOpDef, pyFlinkJoinOpAssign, pyFlinkOrderedJoinOpDef, \
     pyFlinkOrderedJoinOpAssign, pyFlinkEventTimeAssignerDef, pyFlinkEventTimeAssigner
 from spe.runtime.compiler.codegeneration.frameworks.pyFlink.pyFlinkUtils import PyFlinkStruct, PyFlinkJARs, \
-    getPyFlinkTypeFor, PyFlinkTags
+    getPyFlinkTypeFor, PyFlinkTags, getUniformKeyBySet
 from spe.runtime.compiler.codegeneration.nativeCodeExtractor import NativeCodeExtractor, ModuleExtractor, ClassExtractor
 from spe.runtime.compiler.definitions.compileDefinitions import CompileFrameworkConnector, CompileLanguage
 from spe.runtime.compiler.definitions.compileOpFunction import CodeTemplateCOF, CompileOpFunction, InferExecutionCodeCOF
@@ -75,7 +75,8 @@ class PyFlinkFC(FrameworkCompiler):
         # Create the execution environment
         
         config = Configuration()
-        config.set_integer("python.fn-execution.bundle.time", 1000)
+        config.set_integer("python.fn-execution.bundle.time", 1000)  # Default
+        config.set_integer("python.fn-execution.bundle.size", 1000)  # Default
         
         env = StreamExecutionEnvironment.get_execution_environment(config)
         env.set_runtime_mode(RuntimeExecutionMode.STREAMING)
@@ -358,7 +359,7 @@ class PyFlinkFC(FrameworkCompiler):
                 joinOpAssign = pyFlinkOrderedJoinOpAssign
 
                 joinProcessFuncAssign = joinOpAssign.substitute(typeHint=typeHint, parallelism=parallelism,
-                                                                keyFunc=self._getArbitraryKeyByFunc(parallelism))
+                                                                keyBy=self._getKeyByFunc(op.operator, parallelism, 2))
             else:
                 joinOpDef = pyFlinkJoinOpDef
                 joinOpAssign = pyFlinkJoinOpAssign
@@ -453,12 +454,12 @@ class PyFlinkFC(FrameworkCompiler):
         if opData.reorderTuples() and len(op.inputs) == 1:
             self._registerHelperStruct(pyFlinkReorderEventsOpDef)
 
-            keyFunc = self._getArbitraryKeyByFunc(cfg.parallelismCount)
-
             # Reorder operator is added before our actual operator and need to consider input data types
 
             inTypeHint = PyFlinkFC._createDataTypeHint(opData, False)
-            inDS = inDS + pyFlinkReorderEventsOpAssign.substitute(typeHint=inTypeHint, keyFunc=keyFunc, parallelism=cfg.parallelismCount)
+            keyBy = self._getKeyByFunc(op, cfg.parallelismCount)
+
+            inDS = inDS + pyFlinkReorderEventsOpAssign.substitute(typeHint=inTypeHint, keyBy=keyBy, parallelism=cfg.parallelismCount)
 
         # Handle assignment(s) to pipeline
 
@@ -539,8 +540,10 @@ class PyFlinkFC(FrameworkCompiler):
                 assignments = [assignments]
 
             for assignment in assignments:
+                keyBy = self._getKeyByFunc(op, cfg.parallelismCount) if "keyBy" in assignment.get_identifiers() else ""
                 inputStream = inDS if combinedAssignment is None else combinedAssignment  # Chain all previous calls
-                combinedAssignment = injectAssignmentParams(assignment.safe_substitute(inDS=inputStream).strip())
+
+                combinedAssignment = injectAssignmentParams(assignment.safe_substitute(inDS=inputStream, keyBy=keyBy).strip())
 
         self._opAssignments.append((op.id, f"{op.getUniqueName()} = " + combinedAssignment))
 
@@ -618,7 +621,7 @@ class PyFlinkFC(FrameworkCompiler):
 
     @staticmethod
     def _canAssignParallelism(funcName: str) -> bool:
-        notAllowedOps = ["key_by", "window_all", "window"]
+        notAllowedOps = ["key_by", "window_all", "window"]  # In our case, key_by is always followed by an actual operator
 
         return funcName not in notAllowedOps
 
@@ -633,12 +636,34 @@ class PyFlinkFC(FrameworkCompiler):
 
         return False
 
-    @staticmethod
-    def _getArbitraryKeyByFunc(parallelism: int):
+    def _getKeyByFunc(self, op: Operator, parallelism: int, cardinality: int = 1):
         # For para=1 we can use constant key for faster partitioning to assign all values to same (single) partition.
-        # For higher parallelism we choose hashed keys based on data and rely on automated distribution across nodes.
+        # For higher parallelism, we choose fast/stable hashed keys based on data and ensure even distribution
+        # Care: Flink uses hash-based assignment of keys->executor which does not reliably ensures a 1:1 key/executor assignment
+        #       -> For now, we simulate Flink's murmur hashing logic to find suitable keys (until PyFlink supports custom assignments)
+        #       -> Alternative: Rebalance after keyed operation! [But this misses unbalanced processing WITHIN the keyed operations]
 
-        return "lambda x: 1" if parallelism == 1 else "lambda x: hash(str(x))"
+        # Future Work: Later we could let user defined a custom keyBy func/key
+        # Future Work: We could also optimize the keys to minimize repartitioning of the data across the whole topology
+        #              For instance: If keyed streams are required downstream, assign a suitable key directly at the sources
+
+        if parallelism > 1:
+            self._imports.append("import pickle")
+            self._imports.append("import zlib")
+
+            keyArray = repr(getUniformKeyBySet(parallelism))
+            keyArrayName = f"keys_{op.id}_{parallelism}"
+
+            self._opFunctions.append((op.id, f"{keyArrayName} = {keyArray}"))
+
+            keyFunc = f"lambda x: {keyArrayName}[zlib.crc32(pickle.dumps(x, protocol=pickle.HIGHEST_PROTOCOL)) % {parallelism}]"
+
+            if cardinality == 2:
+                return f"key_by({keyFunc}, {keyFunc}, key_type=Types.INT())"
+
+            return f"key_by({keyFunc}, key_type=Types.INT())"
+
+        return "key_by(lambda x: 1)"
 
     # ----------------------------------------------------- Utils ------------------------------------------------------
 

@@ -7,6 +7,7 @@ from spe.runtime.compiler.definitions.compileDefinitions import CompileFramework
 from spe.runtime.compiler.definitions.compileOpFunction import CodeTemplateCOF
 from spe.runtime.compiler.definitions.compileOpSpecs import CompileOpSpecs
 from spe.common.tuple import Tuple
+from spe.runtime.compiler.opCompileConfig import OpCompileConfig
 
 
 class WindowCollect(WindowProcessor):
@@ -27,24 +28,8 @@ class WindowCollect(WindowProcessor):
     # -------------------------- Compilation -------------------------
 
     def getCompileSpecs(self) -> List[CompileOpSpecs]:
-        # ProcessAllWindowFunction only for non-keyed streams, for keyed: ProcessWindowFunction,
-        # but apparently not possible to collect all data into one list again ... only per key
-
-        def getPyFlinkCode(compileConfig):
-            from spe.runtime.compiler.codegeneration.frameworks.pyFlink.pyFlinkCodeTemplate import PyFlinkCodeTemplate
-
-            pyFlinkCode = PyFlinkCodeTemplate({
-                PyFlinkCodeTemplate.Section.IMPORTS: """
-            from pyflink.datastream.functions import ProcessAllWindowFunction""",
-                PyFlinkCodeTemplate.Section.FUNCTION_DECLARATION: f"""
-            class ProcessAll{self.getUniqueName().replace("_", "")}(ProcessAllWindowFunction):
-                def process(self, _, elements):
-                    yield list(elements)
-            """,
-                PyFlinkCodeTemplate.Section.ASSIGNMENTS: f"""
-            $inDS.process(ProcessAll{self.getUniqueName().replace("_", "")}())"""})
-
-            return pyFlinkCode
+        def getPyFlinkCode(cfg: OpCompileConfig):
+            return self._getPyFlinkProcessorFunc(cfg.parallelismCount, "yield list(elements)")
 
         return [CompileOpSpecs.getSVDefault(),
                 CompileOpSpecs([CompileFramework.PYFLINK],

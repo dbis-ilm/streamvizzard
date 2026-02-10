@@ -2,7 +2,8 @@ from spe.runtime.debugger.debugStep import DebugStepType
 
 
 class DebugBreakpoint:
-    def __init__(self, enabled: bool, stepType: DebugStepType, amount: int):
+    def __init__(self, bpId: str, enabled: bool, stepType: DebugStepType, amount: int):
+        self.id = bpId
         self.enabled = enabled
         self.stepType = stepType
         self.amount = amount

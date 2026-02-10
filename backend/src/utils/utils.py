@@ -1,6 +1,8 @@
+import logging
 import sys
+import traceback
 import warnings
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 
 def remap(val, sourceFrom, sourceTo, targetFrom, targetTo):
@@ -53,6 +55,29 @@ def escapeStrInDict(data: Dict[Any, str], encode: bool) -> Dict:
 
 def printWarning(msg: str):
     warnings.warn(msg, stacklevel=2)
+
+
+def extractTracebackErrorMsg(showErrorLine: bool = False, lineNrOffset: int = 0,
+                             logError: bool = False) -> Optional[str]:
+    T, V, TB = sys.exc_info()
+
+    if T is None:
+        return None
+
+    # Extract error msg from exception
+
+    tb = traceback.extract_tb(TB)
+    res = traceback.format_exception_only(T, V)
+
+    error = res[len(res) - 1] + "\n".join(res[:len(res) - 1])
+
+    if showErrorLine:
+        error = "[Line " + str(tb[-1].lineno + lineNrOffset) + "] " + error
+
+    if logError:
+        logging.log(logging.ERROR, traceback.format_exc())
+
+    return error.strip()
 
 
 def isWindowsOS():

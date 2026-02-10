@@ -451,6 +451,8 @@ class TupleType(DataType):
 
         if self.entryTypes is not None:
             for et in self.entryTypes:
+                if et is None:
+                    continue
                 res.extend(et.getNestedTypes())
 
         return res
@@ -548,6 +550,7 @@ class IntegerType(DataType):
         super().__init__(definition, uniform=True)
 
 
+# TODO: This does not detect numpy.float types, etc.
 class FloatType(DataType):
     """ Pythons floats are already double precision """
 

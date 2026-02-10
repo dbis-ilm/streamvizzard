@@ -17,10 +17,10 @@
         </SearchSelectList>
       </div>
 
-      <div v-if="errorMessage.length > 0" class="errorContainer">{{errorMessage}}</div>
+      <div v-if="errorMessage != null" class="errorContainer errorMsg">{{errorMessage}}</div>
 
       <div class="modalFooterButtons">
-        <ButtonSec :label="'Close'" @click="closeStoreModal"/>
+        <ButtonSec :label="'Close'" @click="closeModal"/>
         <ButtonSec :label="'Save'" :class="storeConfigName.trim().length > 0 ? '' : 'disabled'" @click="_confirmStoreModal"/>
       </div>
     </div>
@@ -35,68 +35,70 @@
 import NotificationModal from "@/components/interface/elements/base/NotificationModal.vue";
 import SearchSelectList from "@/components/interface/elements/base/SearchSelectList.vue";
 import ButtonSec from "@/components/interface/elements/base/ButtonSec.vue";
-import {system} from "@/main";
-import {NetworkService} from "@/scripts/services/network/NetworkService";
-import {DataExportService} from "@/scripts/services/dataExport/DataExportService";
+import {Services} from "@/scripts/services/Services";
+import {Modal, MODALS} from "@/scripts/interface/Interface";
+import OperatorPreset from "@/scripts/services/opPresets/OperatorPreset";
 
 export default {
-  name: "OperatorPresetStoreModal",
   components: {ButtonSec, SearchSelectList, NotificationModal},
+
   data() {
     return {
       loading: false,
-      errorMessage: "",
+      errorMessage: null,
 
-      editMode: false,
+      /** @type SvOperator */ storeOp: null,
+      /** @type OperatorPreset */ editPreset: null,
 
-      storeOp: null,
-      storeOpData: null, // Filled if edit mode
       storeConfigName: "",
       storeConfigDescription: "",
       storeConfigCategory: "",
-
-      presetList: [],
-      presetUpdateCallback: null,
     }
   },
+
+  computed: {
+    editMode() {
+      return this.editPreset != null;
+    }
+  },
+
   methods: {
-    openStoreModal(opNode, presetList, presetUpdateCallback) {
-      this.storeOp = opNode;
-      this.storeConfigName = opNode.viewName;
+    /** @param {SvOperator} operator **/
+    openStoreModal(operator) {
+      this.storeOp = operator;
+      this.editPreset = null;
+
+      this.storeConfigName = operator.name;
       this.storeConfigDescription = "";
       this.storeConfigCategory = "";
-      this.presetList = presetList;
-      this.presetUpdateCallback = presetUpdateCallback;
-      this.editMode = false;
 
       this.$modal.show("storeOperatorPresetModal");
     },
 
-    openEditModal(opData, presetList, presetUpdateCallback) {
+    /** @param {OperatorPreset} editPreset */
+    openEditModal(editPreset) {
       this.storeOp = null;
-      this.storeOpData = opData;
-      this.storeConfigName = opData["name"];
-      this.storeConfigDescription = opData["descr"];
-      this.storeConfigCategory = opData["category"];
-      this.presetList = presetList;
-      this.presetUpdateCallback = presetUpdateCallback;
-      this.editMode = true;
+      this.editPreset = editPreset;
+
+      this.storeConfigName = editPreset.name;
+      this.storeConfigDescription = editPreset.descr
+      this.storeConfigCategory = editPreset.category;
 
       this.$modal.show("storeOperatorPresetModal");
     },
 
-    closeStoreModal() {
+    closeModal() {
       this.storeOp = null;
       this.$modal.hide("storeOperatorPresetModal");
     },
 
     _onStoreModalOpened() {
-      this.errorMessage = "";
-      this.$refs.overrideList.updateDataArray(this.presetList);
+      this.errorMessage = null;
+      this.$refs.overrideList.updateDataArray(Services.OpPresetService.presets);
     },
 
     _confirmStoreModal() {
-      this.errorMessage = "";
+      this.errorMessage = null;
 
       this.storeConfigName = this.storeConfigName.trim()
       this.storeConfigDescription = this.storeConfigDescription != null ? this.storeConfigDescription.trim() : null;
@@ -110,10 +112,10 @@ export default {
 
       let checkOverride = false;
 
-      if(this.editMode && this.storeConfigName !== this.storeOpData["name"]) checkOverride = true;
+      if(this.editMode && this.storeConfigName !== this.editPreset.name) checkOverride = true;
       else if(!this.editMode) checkOverride = true;
 
-      if(checkOverride && this.presetList.some(val => {return val.name === this.storeConfigName})) {
+      if(checkOverride && Services.OpPresetService.presets.some(val => {return val.name === this.storeConfigName})) {
         this.$modal.show('opStorageConfirmModal', {
           title: "Override Confirmation",
           content: "Are you sure to override<br><i>" + this.storeConfigName + "</i>?",
@@ -123,57 +125,30 @@ export default {
     },
 
     _performStorePreset() {
-      let ths = this;
       this.loading = true;
+      this.errorMessage = null;
 
-      let opSaveData = null;
+      let newPreset = new OperatorPreset();
+      newPreset.name = this.storeConfigName;
+      newPreset.descr = this.storeConfigDescription;
+      newPreset.category = this.storeConfigCategory;
+      newPreset.width = this.editMode ? this.editPreset.width : this.storeOp.width;
+      newPreset.height = this.editMode ? this.editPreset.height : this.storeOp.height;
+      newPreset.saveData = this.editMode ? this.editPreset.saveData : this.storeOp.exportSaveData();
 
-      if(this.editMode) {
-        opSaveData = { ...this.storeOpData }; //Clone data
-        opSaveData["name"] = this.storeConfigName;
-        opSaveData["descr"] = this.storeConfigDescription;
-        opSaveData["category"] = this.storeConfigCategory;
-      } else {
-        let zoom = system.editor.view.area.transform.k;
-        let opBounds = this.storeOp.vueContext.$el.getBoundingClientRect();
+      Services.OpPresetService.storePreset(newPreset).then((storedPreset) => {
+        if(storedPreset != null) {
+          // Delete original conf if we edited it and changed the name
+          if(this.editMode && this.editPreset.name !== newPreset.name) Services.OpPresetService.deletePreset(this.editPreset.name).then();
 
-        opSaveData = {
-          "name": this.storeConfigName,
-          "descr": this.storeConfigDescription,
-          "category": this.storeConfigCategory,
-          "className": this.storeOp.component.name,
-          "saveData": DataExportService.getOperatorSaveData(this.storeOp),
-          "width": opBounds.width / zoom,
-          "height": opBounds.height / zoom
-        };
-      }
+          this.editPreset = newPreset;
 
-      NetworkService.storeOperator(opSaveData).then(function(res) {
-        if(res) {
-          ths.presetList = ths.presetList.filter(p => p.name !== opSaveData.name);
-          ths.presetList.unshift(opSaveData);
+          this.closeModal();
 
-          // Delete original conf if we edited it and changed name
-          if(ths.editMode && ths.storeOpData["name"] !== opSaveData["name"]) {
-            NetworkService.deleteStoredOperator(ths.storeOpData["name"]).then(function(res) {
-              if(res) ths.presetList = ths.presetList.filter(p => p.name !== ths.storeOpData["name"]);
-
-              if(ths.presetUpdateCallback != null) ths.presetUpdateCallback(ths.presetList);
-
-              ths.closeStoreModal();
-              ths.loading = false;
-            });
-          } else {
-            if(ths.presetUpdateCallback != null) ths.presetUpdateCallback(ths.presetList);
-
-            ths.closeStoreModal();
-            ths.loading = false;
-          }
-        } else {
-          ths.errorMessage = "Couldn't store preset!";
-          ths.loading = false;
-        }
+        } else this.errorMessage = "Couldn't store preset!";
       });
+
+      this.loading = false;
     },
 
     _selectConfigOverride(cfg) {
@@ -181,6 +156,11 @@ export default {
 
       this._confirmStoreModal();
     },
+  },
+
+  mounted() {
+    this.$streamvizzard.interface.registerModal(new Modal(MODALS.OP_PRESET_STORE, this.openStoreModal, this.closeModal));
+    this.$streamvizzard.interface.registerModal(new Modal(MODALS.OP_PRESET_EDIT, this.openEditModal, this.closeModal));
   }
 }
 </script>
@@ -189,7 +169,6 @@ export default {
 
 .errorContainer {
   margin-top: 5px;
-  color: red;
 }
 
 .presetDescriptionInput {

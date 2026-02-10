@@ -59,12 +59,18 @@ class MonitorDataType:
 
         return self._transformFunc(data)
 
+    def getDefaultDisplayModeID(self) -> int:
+        if len(self._displayModes) == 0:
+            return 0
+
+        return list(self._displayModes.keys())[0]
+
     def hasDisplayMode(self, dMode: int) -> bool:
         prep = self._displayModes.get(dMode, None)
 
         return prep is not None
 
-    def prepareForDisplayMode(self, dMode: int, data, settings):
+    def prepareForDisplayMode(self, dMode: int, data, settings: Optional[Dict]):
         prep = self._displayModes.get(dMode, None)
 
         if prep is None:

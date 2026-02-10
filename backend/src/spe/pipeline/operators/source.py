@@ -187,6 +187,7 @@ class Source(Operator, ABC):
         # Micro sleeps < 1ms will slow down execution, actual sleep time depends on timer resolution!
         # TODO: We could try to improve the actual sleep by considering dif to scheduled sleep
         #       Problem: Sleep resolution is not able to keep up with high frequency data
+        #       Care for rate changes!
         if wt >= 0.001:
             await asyncio.sleep(wt)
 

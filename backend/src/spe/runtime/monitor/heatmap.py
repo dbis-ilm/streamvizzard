@@ -22,6 +22,7 @@ class HeatmapResult:
         return len(self.opRating) > 0
 
 
+# TODO: Could be moved to UI since we now transmit stats to UI
 class Heatmap:
     def __init__(self):
         self._currentType = HeatmapType.NONE
@@ -132,6 +133,7 @@ class Heatmap:
             elL = len(elements)
 
             i = 0
+
             while i < elL:
                 bv = elements[i][1]
 

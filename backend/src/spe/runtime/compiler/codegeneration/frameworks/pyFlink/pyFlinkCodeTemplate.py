@@ -12,6 +12,7 @@ class PyFlinkCodeTemplate(CodeTemplate):
     """ Must contain placeholders:
     Section: ASSIGNMENTS
     $inDS: The dataStream which this operator should be added to | e.g. usage: $inDS.add_sink(...)
+    $keyBy: The placeholder for the key by functionality
     Section: FUNCTION_CONTENT
     $input: For accessing the input data, if operator has more than one input, array access must be used $input[0]
     ---

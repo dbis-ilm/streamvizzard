@@ -35,8 +35,6 @@ class Convert(Operator):
         return {"mode": self.modeRaw}
 
     def _execute(self, tupleIn: Tuple) -> Optional[Tuple]:
-        # TODO: CHECK IF CONVERSION IS EVEN POSSIBLE -> RETHINK IF THE CURRENT CONVERSIONS MAKE SENSE!
-
         res = tupleIn.data[0].mat
         if self.mode == 0:
             res = cv2.cvtColor(res, cv2.COLOR_BGR2GRAY)

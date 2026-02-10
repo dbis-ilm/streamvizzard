@@ -1,13 +1,14 @@
-import {Service} from "@/scripts/services/Services";
-import {NetworkService} from "@/scripts/services/network/NetworkService";
-import {PipelineService} from "@/scripts/services/pipelineState/PipelineService";
-import {EVENTS, executeEvent} from "@/scripts/tools/EventHandler";
+import {EVENTS, executeEvent, registerEvent} from "@/scripts/tools/EventHandler";
+import {SvInstance} from "@/scripts/StreamVizzard";
+import {Service} from "@/scripts/services/Service";
+import {Services} from "@/scripts/services/Services";
+import {GenericUpdatePU, OperatorAddedPU, OperatorRemovedPU} from "@/scripts/services/pipelineUpdates/PipelineUpdates";
 
 const UPDATE_FREQUENCY_MS = 250;
 
 // Responsible for managing and sending pipelineState updates to the server
 
-class _PipelineUpdateService extends Service {
+export class PipelineUpdateService extends Service {
     constructor() {
         super("PipelineUpdateService");
 
@@ -21,7 +22,7 @@ class _PipelineUpdateService extends Service {
         super.onInitialize();
 
         window.setInterval(() => {
-            if(PipelineService.isPipelineStarted()) {
+            if(SvInstance.pipeline.isPipelineStarted()) {
                 if (this.reqPipelineUpdates.length > 0) {
                     const copy = this.reqPipelineUpdates;
                     let updateID = this.uniqueUpdateID;
@@ -39,9 +40,23 @@ class _PipelineUpdateService extends Service {
                 this.uniqueUpdateID = 0;
             }
         }, UPDATE_FREQUENCY_MS);
+
+        registerEvent(EVENTS.OP_CREATED,
+            /** @param {SvOperator} op */ (op) =>
+                this.registerPipelineUpdate(new OperatorAddedPU(op.id, op.getRuntimeSetup())));
+
+        registerEvent(EVENTS.OP_REMOVED,
+            /** @param {SvOperator} op */ (op) =>
+            this.registerPipelineUpdate(new OperatorRemovedPU(op.id)));
+
+        registerEvent(EVENTS.DEBUG_UI_EVENT_REGISTERED, () => {
+            this.registerPipelineUpdate(new GenericUpdatePU());
+        })
     }
 
     registerPipelineUpdate(update) {
+        SvInstance.pipeline.errorMsg = null; // Reset error if we perform a change
+
         executeEvent(EVENTS.PIPELINE_MODIFIED, update);
 
         if(!this._canRegisterPipelineUpdate()) return false;
@@ -65,7 +80,7 @@ class _PipelineUpdateService extends Service {
     }
 
     _canRegisterPipelineUpdate() {
-        return PipelineService.isPipelineStarted() && this.listenPipelineChanges;
+        return SvInstance.pipeline.isPipelineStarted() && this.listenPipelineChanges;
     }
 
     _sendPipelineUpdates(updateData, updateID) {
@@ -74,8 +89,6 @@ class _PipelineUpdateService extends Service {
         data["cmd"] = "pipelineUpdate";
         data["updateID"] = updateID;
 
-        NetworkService.socketSend(data);
+        Services.Network.socketSend(data);
     }
 }
-
-export const PipelineUpdateService = new _PipelineUpdateService();

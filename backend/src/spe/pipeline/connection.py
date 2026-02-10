@@ -1,7 +1,6 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 from spe.common.tuple import Tuple
-from spe.runtime.monitor.connectionMonitor import ConnectionMonitor
 from streamVizzard import StreamVizzard
 
 if TYPE_CHECKING:
@@ -14,7 +13,11 @@ class Connection:
         self.input = socketIN
         self.output = socketOUT
 
-        self._monitor = ConnectionMonitor(self) if StreamVizzard.getConfig().MONITORING_ENABLED else None
+        if StreamVizzard.getConfig().MONITORING_ENABLED:
+            from spe.runtime.monitor.connectionMonitor import ConnectionMonitor
+            self._monitor = ConnectionMonitor(self)
+        else:
+            self._monitor = None
 
     def onTupleTransmitted(self, origTuple: Tuple):
         if self._monitor is not None:

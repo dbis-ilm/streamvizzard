@@ -5,18 +5,23 @@
         <div class="formInputContainer" v-if="showStrategySelect">
           <span class="formInputLabel limitedText alignLeft" title="Strategy used for calculating compilation target suggestions for each operator">Strategy:&nbsp;</span>
           <v-select v-auto-blur :clearable="false" :searchable="false" :options="strategyOptions" class="formInputField"
-                    :value="strategyOptionSelected" @input="_onStrategySelected($event)" label="title" :getOptionKey="(o) => o.key">
+                    :value="value" @input="_onStrategySelected($event)" label="title" :getOptionKey="(o) => o.key">
           </v-select>
         </div>
 
-        <CollapseHeader v-if="strategyOptionSelected != null && toggleSettings" :openedDir="'up'" class="settingsToggle" v-model="showSettings" :title="'Settings'"></CollapseHeader>
+        <CollapseHeader v-if="value != null && toggleSettings" :openedDir="'up'" class="settingsToggle" v-model="showSettings" :title="'Settings'">
+          <i class="bi bi-arrow-counterclockwise clickableIcon resetIcon" title="Reset settings" v-show="showSettings" @click="_resetStrategy($event)"></i>
+        </CollapseHeader>
 
-        <div class="optionsContainer" v-if="strategyOptionSelected != null && (showSettings || !toggleSettings)">
-          <div class="formInputContainer" v-for="el in strategyOptionSelected.elements" :key="el.key" v-show="el.show">
+        <div class="optionsContainer" v-if="value != null && (showSettings || !toggleSettings)">
+          <div class="formInputContainer" v-for="el in value.elements" :key="el.key" v-show="el.show">
             <span v-if="el.type !== 'Grouper'" class="formInputLabel limitedText alignLeft" :title="el.tooltip">{{ el.title }}:&nbsp;</span>
             <CollapseHeader v-else :openedDir="'up'" class="optionsGrouper" v-model="el.open" @input="() => el.onToggle()" :title="el.title" :tooltip="el.tooltip"></CollapseHeader>
 
             <v-select v-if="el.type === 'Select'" v-auto-blur :getOptionKey="(o) => o.key" :clearable="false"
+                      :multiple="el.multiple"
+                      :style="el.multiple ? 'height: auto;' : ''"
+                      :placeholder="el.placeholder"
                       :searchable="false" :options="el.options" class="formInputField"
                       :value="el.value" @input="(v) => el.onValueChange(v)" label="title"></v-select>
             <input v-else-if="el.type === 'TextInput'" class="formInputField alignLeft optionTextInput" type="text" v-model="el.value" :placeholder="el.placeholder" @change="(event) => el.onValueChange(event.target.value)"/>
@@ -35,10 +40,13 @@
 import CollapseHeader from "@/components/interface/elements/base/CollapseHeader.vue";
 import FormInputWithUnit from "@/components/interface/elements/base/FormInputWithUnit.vue";
 
+import {CompileOptionStrategy} from "@/scripts/features/compiler/CompileStrategies";
+
 export default {
   name: "CompileStrategySelect",
   components: {FormInputWithUnit, CollapseHeader},
   props: {
+    value: {type: CompileOptionStrategy, required: true},
     strategyOptions: {type: Array, required: true},
     toggleSettings: {type: Boolean, default: true},
     showStrategySelect: {type: Boolean, default: true},
@@ -46,7 +54,6 @@ export default {
 
   data() {
     return {
-      strategyOptionSelected: null,
       showSettings: false,
 
       sliderOptions: {
@@ -61,43 +68,22 @@ export default {
   },
 
   methods: {
-    getStrategyData() {
-      if(this.strategyOptionSelected != null)
-        return this.strategyOptionSelected.getStrategyData();
-
-      return null;
-    },
-
-    setStrategyData(data) {
-      if(data == null) { // Reset
-        this._onStrategySelected(this.strategyOptions[0]);
-        this.strategyOptionSelected.reset();
-
-        return;
-      }
-
-      let name = data["name"];
-
-      for(let option of this.strategyOptions) {
-        if(option.key === name) {
-          option.setData(data["settings"]);
-
-          this._onStrategySelected(option);
-
-          return;
-        }
-      }
-    },
-
     _onStrategySelected(selected) {
-      this.strategyOptionSelected = selected;
+      this.$emit("input", selected);
 
-      this.strategyOptionSelected.load();
+      selected.load();
     },
+
+    _resetStrategy(e) {
+      this.value.reset();
+      this.value.load();
+
+      e.stopPropagation();
+    }
   },
 
   mounted() {
-    this._onStrategySelected(this.strategyOptions[0]);
+    this._onStrategySelected(this.value == null ? this.strategyOptions[0] : this.value);
   }
 }
 
@@ -130,12 +116,8 @@ export default {
 }
 
 .compileStrategyOptions .optionCheckbox {
-  margin-top: 0.75rem;
-  margin-left: auto;
-  margin-right: auto;
-  display:block;
-  height: 1rem;
-  width: 1rem;
+  margin-top: 0.65rem;
+  float: left;
 }
 
 .compileStrategyOptions .optionTextInput {
@@ -181,6 +163,11 @@ export default {
   margin-left:-5px;
   padding-top: 5px;
   text-decoration: underline;
+}
+
+.resetIcon {
+  position: absolute;
+  left: 0;
 }
 
 </style>

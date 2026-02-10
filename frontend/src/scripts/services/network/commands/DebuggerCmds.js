@@ -1,9 +1,7 @@
 import {Command} from "@/scripts/services/network/commands/Command";
-import {system} from "@/main";
-import {synchronizeExecution} from "@/scripts/tools/debugger/DebuggingUtils";
-import {NetworkService} from "@/scripts/services/network/NetworkService";
-import {safeVal} from "@/scripts/tools/Utils";
-import {PipelineService} from "@/scripts/services/pipelineState/PipelineService";
+import {synchronizeExecution} from "@/scripts/features/debugger/DebuggingUtils";
+import {SvInstance} from "@/scripts/StreamVizzard";
+import {DebugStep} from "@/scripts/features/debugger/DebugSteps";
 
 class DebuggerCMD extends Command {
     constructor(name) {
@@ -11,11 +9,7 @@ class DebuggerCMD extends Command {
     }
 
     isDebuggerEnabled() {
-        return safeVal(system.$refs.debugger) != null;
-    }
-
-    getDebugger() {
-        return system.$refs.debugger;
+        return SvInstance.debugger.enabled;
     }
 }
 
@@ -26,11 +20,9 @@ class DebuggerDataCMD extends DebuggerCMD {
 
     async handleCommand(data) {
         if(this.isDebuggerEnabled()) await synchronizeExecution(async () => {
-            await this.getDebugger().updateTimeline(data["active"], data["maxSteps"],
-                data["stepID"], data["branchID"], data["stepTime"],
-                data["branchStartTime"], data["branchEndTime"], data["branchStepOffset"],
-                data["memSize"], system.$refs.historyMemSlider.getMemoryLimit(),
-                data["diskSize"], system.$refs.historyStorageSlider.getMemoryLimit(), data["rewindActive"]);});
+            let step = new DebugStep(data["branchID"], data["stepID"], data["stepOp"], data["stepType"], data["stepTime"]);
+            await SvInstance.debugger.updateTimeline(step, data["active"], data["memSize"], data["diskSize"], data["maxSteps"],
+                data["branchStartTime"], data["branchEndTime"], data["branchStepOffset"]);});
     }
 }
 
@@ -42,7 +34,7 @@ class DebuggerHistoryExCMD extends DebuggerCMD {
     async handleCommand(data) {
         if(this.isDebuggerEnabled()) {
             await synchronizeExecution(async () => {
-                await this.getDebugger().onStepExecution(data["stepID"], data["branchID"], data["op"], data["type"], data["undo"], data["stepTime"]);
+                await SvInstance.debugger.onStepExecuted(new DebugStep(data["branchID"], data["stepID"], data["op"], data["type"], data["stepTime"]), data["undo"]);
             });
         }
     }
@@ -54,7 +46,7 @@ class DebuggerRewindCMD extends DebuggerCMD {
     }
 
     handleCommand(data) {
-        if(this.isDebuggerEnabled()) this.getDebugger().onRewindStatusUpdate(data["status"]);
+        if(this.isDebuggerEnabled()) SvInstance.debugger.onRewindStatusUpdate(data["status"]);
     }
 }
 
@@ -66,7 +58,7 @@ class DebuggerUndoPendingPUCMD extends DebuggerCMD {
     async handleCommand(data) {
         await synchronizeExecution(async () => {
             if(this.isDebuggerEnabled())
-                await this.getDebugger().undoPendingUpdates(data["updateIDs"]);
+                await SvInstance.debugger.undoPendingUpdates(data["updateIDs"]);
         })
     }
 }
@@ -78,7 +70,7 @@ class DebuggerRegPUCMD extends DebuggerCMD {
 
     handleCommand(data) {
         if(this.isDebuggerEnabled())
-            this.getDebugger().onPipelineUpdateRegistered(data["updateIDs"], data["branchID"], data["stepID"], data["stepTime"]);
+            SvInstance.debugger.onPipelineUpdateRegistered(data["updateIDs"], data["branchID"], data["stepID"], data["stepTime"]);
     }
 }
 
@@ -89,7 +81,7 @@ class DebuggerSplitCMD extends DebuggerCMD {
 
     handleCommand(data) {
         if(this.isDebuggerEnabled())
-            this.getDebugger().onHistorySplit(data["branchID"], data["parentID"], data["splitTime"], data["splitStep"]);
+            SvInstance.debugger.onHistorySplit(data["branchID"], data["parentID"], data["splitTime"], data["splitStep"]);
     }
 }
 
@@ -100,7 +92,7 @@ class DebuggerHGUpdateCMD extends DebuggerCMD {
 
     handleCommand(data) {
         if(this.isDebuggerEnabled())
-            this.getDebugger().onHistoryGraphUpdate(data["updates"]);
+            SvInstance.debugger.onHistoryGraphUpdate(data["updates"]);
     }
 }
 
@@ -112,11 +104,16 @@ class DebuggerTriggerBpCMD extends DebuggerCMD {
     async handleCommand(data) {
         if(this.isDebuggerEnabled()) {
             await synchronizeExecution(async () => {
-                await this.getDebugger().onStepExecution(data["stepID"], data["branchID"], data["op"], data["type"], null, data["stepTime"]);
+                await SvInstance.debugger.onStepExecuted(new DebugStep(data["branchID"], data["stepID"], data["op"], data["type"], data["stepTime"]), null);
 
-                let op = PipelineService.getOperatorByID(data["op"]);
+                let op = SvInstance.pipeline.getOperatorByID(data["op"]);
 
-                if(op != null) op.vueContext.setBreakpointTriggered(data["bpIndex"]);
+                if(op != null) {
+                    // Set triggered for bp and reset all other
+                    for(let bp of op.breakPoints) {
+                        bp["triggered"] = bp["id"] === data["bpId"];
+                    }
+                }
             });
         }
     }
@@ -128,18 +125,18 @@ class DebuggerProvQueryResCMD extends DebuggerCMD {
     }
 
     handleCommand(data) {
-        if(this.isDebuggerEnabled()) this.getDebugger().onReceiveProvenanceQueryResult(data["data"]);
+        if(this.isDebuggerEnabled()) SvInstance.debugger.onReceiveProvenanceQueryResult(data["data"]);
     }
 }
 
-export function registerDebuggerCMDs() {
-    NetworkService.registerCommand(new DebuggerDataCMD());
-    NetworkService.registerCommand(new DebuggerHistoryExCMD());
-    NetworkService.registerCommand(new DebuggerRewindCMD());
-    NetworkService.registerCommand(new DebuggerUndoPendingPUCMD());
-    NetworkService.registerCommand(new DebuggerRegPUCMD());
-    NetworkService.registerCommand(new DebuggerSplitCMD());
-    NetworkService.registerCommand(new DebuggerHGUpdateCMD());
-    NetworkService.registerCommand(new DebuggerTriggerBpCMD());
-    NetworkService.registerCommand(new DebuggerProvQueryResCMD());
+export function registerDebuggerCMDs(service) {
+    service.registerCommand(new DebuggerDataCMD());
+    service.registerCommand(new DebuggerHistoryExCMD());
+    service.registerCommand(new DebuggerRewindCMD());
+    service.registerCommand(new DebuggerUndoPendingPUCMD());
+    service.registerCommand(new DebuggerRegPUCMD());
+    service.registerCommand(new DebuggerSplitCMD());
+    service.registerCommand(new DebuggerHGUpdateCMD());
+    service.registerCommand(new DebuggerTriggerBpCMD());
+    service.registerCommand(new DebuggerProvQueryResCMD());
 }

@@ -28,6 +28,9 @@ class DataInspect(ABC):
         ...
 
     def select(self, selected):
+        if selected == self.inspectRawData:
+            return
+
         self.inspectRawData = selected
         self._selectInternal(selected)
 

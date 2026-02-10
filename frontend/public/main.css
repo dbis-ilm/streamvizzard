@@ -4,6 +4,14 @@
     --main-hover-color: #888; /* Hover on Menu, ContextMenu */
     --main-border-color: #dedede;
     --second-bg-color: rgb(247, 247, 247); /* Sidebar, White Buttons, Modals */
+    --second-border-color: #bbb; /* UI input fields */
+
+    --input-active-color: rgb(255, 255, 204); /* Active background highlight color of input element */
+    --input-selection-color: var(--main-font-color); /* Selected element of an input such as dropdown or checkbox #c7eaff*/
+
+    --success-color: rgb(0, 100, 220);
+    --warning-color: #f09b00;
+    --error-color: rgb(255, 0, 0);
 
     /* Second buttons = secBg buttons with dark border in modal */
     --second-button-bg-color: var(--second-bg-color);
@@ -15,12 +23,16 @@
     --window-buton-bg-color: var(--main-bg-color);
     --window-buton-border-color: var(--main-font-color);
 
+    --node-title-font-size: 1.6rem;
     --node-border: 2px solid var(--main-hover-color);
+    --node-outline-color: var(--main-hover-color);
     --node-border-radius: 10px;
     --connection-color: #c1c1c1;
 
     --form-font-size: 1rem;
     --form-font-size-small: 0.85rem;
+
+    --editor-scale-fac: 1; /* Required scale amount to preserve scale of elements when editor is scaled (min:1) */
 }
 
 * {
@@ -43,18 +55,6 @@ body {
 html, body, #app {
     height: 100%;
     background: var(--main-bg-color);
-}
-
-input, textarea {
-    font-size: var(--form-font-size);
-}
-
-.connection path.main-path {
-    stroke: var(--connection-color);
-}
-
-.connection.hovered path.main-path{
-    stroke: var(--main-hover-color);
 }
 
 .clearfix:after {
@@ -94,7 +94,7 @@ input, textarea {
     top: -6px;
 }
 
-.ctrlRow:hover .ctrlIcon {
+.ctrlRow:hover:not(:focus-within) .ctrlIcon {
     cursor: pointer;
 
     visibility: visible;
@@ -106,6 +106,10 @@ input, textarea {
     padding-right: 3px;
     font-size:26px;
     color: #555;
+}
+
+.ctrlIcon.activated {
+    opacity: 0.25;
 }
 
 .displayModeSetting {
@@ -145,16 +149,9 @@ input, textarea {
     height: 11em;
     border-radius: 50%;
     background: #69C0FF;
-    background: -moz-linear-gradient(left, #69C0FF 10%, rgba(0,255,255, 0) 42%);
-    background: -webkit-linear-gradient(left, #69C0FF 10%, rgba(0,255,255, 0) 42%);
-    background: -o-linear-gradient(left, #69C0FF 10%, rgba(0,255,255, 0) 42%);
-    background: -ms-linear-gradient(left, #69C0FF 10%, rgba(0,255,255, 0) 42%);
     background: linear-gradient(to right, #69C0FF 10%, rgba(0,255,255, 0) 42%);
     position: relative;
-    -webkit-animation: load3 1.4s infinite linear;
     animation: load3 1.4s infinite linear;
-    -webkit-transform: translateZ(0);
-    -ms-transform: translateZ(0);
     transform: translateZ(0);
 }
 .loader:before {
@@ -182,11 +179,9 @@ input, textarea {
 }
 @-webkit-keyframes load3 {
     0% {
-        -webkit-transform: rotate(0deg);
         transform: rotate(0deg);
     }
     100% {
-        -webkit-transform: rotate(360deg);
         transform: rotate(360deg);
     }
 }
@@ -205,9 +200,77 @@ input, textarea {
 }
 
 .noSelect {
-    -webkit-user-select: none; /* Safari */
-    -ms-user-select: none; /* IE 10 and IE 11 */
     user-select: none; /* Standard syntax */
+}
+
+input, textarea {
+    font-size: var(--form-font-size);
+    border: solid 1px var(--second-border-color);
+    border-radius: var(--button-border-radius);
+}
+
+/** TODO: Merge/Streamline editorInput and formInput (other other sub-styles such as dm settings, ...) style! */
+
+input.editorInput, textarea.editorInput {
+    outline: none;
+    border: none;
+    box-shadow: 0 0 0 calc(1px * var(--editor-scale-fac)) var(--second-border-color);
+    border-radius: var(--button-border-radius);
+    color: var(--main-font-color);
+    cursor: pointer;
+}
+
+input.editorInput[ei-active], textarea.editorInput[ei-active] {
+    background: var(--input-active-color) !important;
+    color: var(--main-font-color) !important;
+
+    box-shadow: 0 0 0 calc(2px * var(--editor-scale-fac)) var(--main-font-color);
+    text-shadow: -0.01ex 0 0 var(--main-font-color), 0.01ex 0 0 var(--main-font-color) !important;
+}
+
+input[type=checkbox]:after.editorInput:checked {
+    width: calc(60% * var(--editor-scale-fac));
+    height: calc(60% * var(--editor-scale-fac));
+}
+
+.editorInput.editorNameInput {
+    color: white;
+    background-image: none;
+    background-color: transparent;
+    user-select: none;
+    box-shadow: none;
+}
+
+input[type=checkbox] {
+    user-select: none;
+    display: inline-block;
+    padding: 0;
+    margin: 0;
+    height: 18px;
+    width: 18px;
+    border-radius: var(--button-border-radius);
+    cursor: pointer;
+    position: relative;
+    appearance: none;
+    background: white;
+    color: var(--input-selection-color);
+}
+
+input[type="checkbox"]:checked::after {
+    content: '';
+    position: absolute;
+
+    border-radius: 2px;
+    top: 50%;
+    left: 50%;
+    transform: translate(calc(-50%), calc(-50%));
+    width: 60%;
+    height: 60%;
+    background: var(--input-selection-color);
+}
+
+input[type="checkbox"]:active {
+    background: #fbfbfb;
 }
 
 .hidden {
@@ -215,10 +278,6 @@ input, textarea {
 }
 
 .resizableHandleNW {
-    -webkit-transform: rotate(180deg);
-    -moz-transform: rotate(180deg);
-    -ms-transform: rotate(180deg);
-    -o-transform: rotate(180deg);
     transform: rotate(180deg);
 
     left: -1px !important;
@@ -226,10 +285,6 @@ input, textarea {
 }
 
 .resizableHandleNE {
-    -webkit-transform: rotate(270deg);
-    -moz-transform: rotate(270deg);
-    -ms-transform: rotate(270deg);
-    -o-transform: rotate(270deg);
     transform: rotate(270deg);
 
     right: -1px !important;
@@ -274,25 +329,19 @@ input, textarea {
 }
 
 .mirrorY {
-    -webkit-transform: rotate(180deg);
-    -moz-transform: rotate(180deg);
-    -ms-transform: rotate(180deg);
-    -o-transform: rotate(180deg);
     transform: rotate(180deg);
 }
 
 .errorMsg {
-    margin-top: 5px;
-    color: red;
+    color: var(--error-color);
 }
 
 .warningMsg {
-    color: #f09b00;
+    color: var(--warning-color);
 }
 
 .successMsg {
-    margin-top: 5px;
-    color: rgb(0, 100, 220);
+    color: var(--success-color);
 }
 
 /* --------- Form Elements --------- */
@@ -300,7 +349,7 @@ input, textarea {
 .formInputField {
     height: 2rem;
     text-align: center;
-    border:solid 1px var(--main-border-color);
+    border:solid 1px var(--second-border-color);
     border-radius: var(--button-border-radius);
     display: block;
     flex: 1 1 auto;
@@ -342,7 +391,7 @@ input.formInputField {
 }
 
 .window .windowContent {
-    padding: 10px;
+    padding: 5px 10px;
 }
 
 .window .windowTitle {
@@ -370,17 +419,17 @@ input.formInputField {
 }
 
 .dock .openCloseButton.opened.right {
-    left: -16px;
+    left: -20px;
     background: linear-gradient(-90deg, var(--second-bg-color) 0%, rgb(200, 200, 200) 300%);
 }
 
 .dock .openCloseButton.closed.left {
-    right: -16px;
+    right: -18px;
     background: linear-gradient(-90deg, var(--second-bg-color) 0%, rgb(200, 200, 200) 100%);
 }
 
 .dock .openCloseButton.closed.right {
-    left: -16px;
+    left: -18px;
     background: linear-gradient(90deg, var(--second-bg-color) 0%, rgb(200, 200, 200) 100%);
 }
 
@@ -390,6 +439,69 @@ input.formInputField {
     top: calc(50% - 27px);
     opacity: 0.5;
     left: -2px;
+}
+
+/* -------- Notifications ------------- */
+
+.notification {
+    color: white;
+    background: color-mix(in srgb, var(--main-font-color), transparent 5%);
+    border: 2px solid var(--main-font-color);
+    border-radius: 8px;
+    margin-top: -8px;
+
+    font-size: var(--node-title-font-size);
+    padding-left: 5px;
+    padding-right: 5px;
+
+    text-align: center;
+    width: 100%;
+    max-width: 310px;
+    box-sizing: border-box;
+
+    pointer-events: none;
+    user-select: none;
+}
+
+.notification .arrow {
+    position: absolute;
+    bottom: -5px;
+    left: 0;
+    right: 0;
+    margin: 0 auto;
+    width: 50px;
+    height: 25px;
+}
+
+.notification .arrow > span {
+    margin: 20px 0;
+    display: inline-block;
+    vertical-align: middle;
+    width: 0;
+    height: 0;
+    border-left: 10px solid transparent;
+    border-right: 10px solid transparent;
+    border-top: 10px solid var(--main-font-color);
+}
+
+.notificationFade-enter-active {
+    transition: opacity 250ms;
+}
+
+.notificationFade-enter {
+    opacity: 0;
+}
+
+.notificationFade-enter-to {
+    opacity: 1;
+}
+
+.notificationFade-leave-active {
+    transition: opacity 50ms;
+}
+
+.notificationFade-leave-to {
+    opacity: 0;
 }
 
 /* --------- Slider overrides --------- */
@@ -408,6 +520,52 @@ input.formInputField {
 
 /* --------- VSelect overrides --------- */
 
-.vs__selected {
+.v-select .vs__selected {
+    background-color: var(--second-bg-color);
+}
+
+.v-select:not(.vs--multiple) .vs__selected {
     padding: 0!important;
+}
+
+.v-select {
+    display: grid;
+    box-sizing: content-box !important;
+}
+
+/** Hide caret **/
+.v-select .vs__search {
+    caret-color: transparent;
+}
+
+.v-select .vs__dropdown-option--highlight {
+    background: var(--input-selection-color);
+}
+
+.formInputField.v-select {
+    border: none;
+    padding-top: 2px;
+}
+
+.formInputField.v-select .vs__dropdown-toggle {
+    border: solid 1px var(--second-border-color);
+    border-radius: var(--button-border-radius);
+}
+
+/* --------- Ace-Editor overrides --------- */
+
+.ace_editor, .ace_editor *{
+    font-family: "Monaco", "Menlo", "Ubuntu Mono", "Droid Sans Mono", "Consolas", monospace !important;
+}
+
+.ace_editor .ace_gutter {
+    background: #efefef !important;
+}
+
+.ace_editor .ace_content {
+    background: white;
+}
+
+.ace-github.ace_focus .ace_marker-layer .ace_active-line {
+    background: rgb(245, 245, 245);
 }

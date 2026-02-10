@@ -3,6 +3,7 @@ import abc
 from typing import Dict, TYPE_CHECKING, Optional, Type
 
 from spe.runtime.compiler.compilerRes import CompilerRes
+from spe.runtime.compiler.definitions.compileDefinitions import CompileFramework
 from spe.runtime.compiler.placement.knowledgeProvider.executionStatsKP import ExecutionStatsKP
 from spe.runtime.compiler.placement.knowledgeProvider.opKnowledgeProvider import OpKnowledgeType
 from spe.runtime.compiler.placement.opTargetCatalog import OpTargetOption
@@ -37,6 +38,9 @@ class PlacementStrategy(abc.ABC):
         self.avgGPULatency = tryParseFloat(config.get("avgGPULatency"), 0.1) / 1000  # ms
 
         self.targetSwitchPenalty = 1 / 1_000_000  # [s] Motivate algorithm to stick to same target if no stats are provided
+
+        # Frameworks allowed for proposing suggestions
+        self.allowedFrameworks = [CompileFramework.parse(v) for v in config.get("targetFrameworks", [])]
 
         self._determineTargetTps()
 

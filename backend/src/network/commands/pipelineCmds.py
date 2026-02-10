@@ -21,21 +21,18 @@ def applyAdvisorConfig(advisor: PipelineAdvisor, data: Dict):
     advisor.toggleAdvisor(data.get("enabled", False))
 
 
-def _applyStartMetaData(runtimeManager: RuntimeManager, metaData: Optional[Dict]):
-    if metaData is None:
-        metaData = {}
-
+def _applyStartConfig(runtimeManager: RuntimeManager, data: Dict):
     advisor = runtimeManager.gateway.getAdvisor()
     if advisor is not None:
-        applyAdvisorConfig(advisor, metaData.get("advisor", {}))
+        applyAdvisorConfig(advisor, data.get("advisor", {}))
 
     monitor = runtimeManager.gateway.getMonitor()
     if monitor is not None:
-        applyMonitorConfig(monitor, metaData.get("monitor", {}))
+        applyMonitorConfig(monitor, data.get("monitor", {}))
 
     debugger = runtimeManager.gateway.getDebugger()
     if debugger is not None:
-        applyDebuggerConfig(debugger, metaData.get("debugger", {}))
+        applyDebuggerConfig(debugger, data.get("debugger", {}))
 
         debugger.changeDebuggerState(False, None)
 
@@ -58,7 +55,8 @@ class StartPipelineCMD(Command):
             try:
                 with open(data["path"], "r") as f:
                     pipelineRes = PipelineManager.createPipelineFromUISaveFile(json.load(f))
-            except Exception:
+            except Exception as e:
+                print(e)
                 return self.error(f"Failed to read pipeline file {data['path']}!")
 
         else:
@@ -67,7 +65,7 @@ class StartPipelineCMD(Command):
         if pipelineRes.hasError():
             return self.error(pipelineRes.errorMsg)
 
-        startRes = rm.startPipeline(pipelineRes.pipeline, lambda: _applyStartMetaData(rm, data.get("meta")))
+        startRes = rm.startPipeline(pipelineRes.pipeline, lambda: _applyStartConfig(rm, data))
 
         return json.dumps({"res": not startRes.hasError(), "error": startRes.errorMsg})
 
@@ -117,10 +115,10 @@ class SimulateCMD(Command):
         super().__init__("simulate")
 
     def handleCommand(self, rm: RuntimeManager, data: Dict) -> Optional[str]:
-        pipeData = data["pipeline"]
+        runtimeData = data["runtimeConfig"]
         simulationData = data["simulateData"]
 
-        pipelineRes = PipelineManager.createPipeline(pipeData)
+        pipelineRes = PipelineManager.createPipeline(runtimeData["pipeline"])
 
         if pipelineRes.hasError():
             return json.dumps({"res": False, "error": pipelineRes.errorMsg})
@@ -130,6 +128,6 @@ class SimulateCMD(Command):
         sim = PipelineSimulation(pipelineRes.pipeline, rm)
         sim.start(simulationData["duration"], PipelineSimulationMode.parse(simulationData["mode"]),
                   simulationData["sources"],
-                  simulationData["metaData"], lambda: _applyStartMetaData(rm, data["meta"]))
+                  simulationData["metaData"], lambda: _applyStartConfig(rm, runtimeData))
 
         return json.dumps({"res": True, "error": None})

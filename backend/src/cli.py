@@ -6,7 +6,6 @@ import requests
 import time
 import signal
 
-from analysis.costModel.costModelAnalysis import performCostModelAnalysis
 from config import NETWORKING_SERVER_PORT
 
 server = "localhost"
@@ -18,16 +17,18 @@ port = NETWORKING_SERVER_PORT
 def registerStartPipeline(subparsers):
     parser = subparsers.add_parser("startPipeline", help="Executes the specified pipeline if no current pipeline is running.")
     parser.add_argument("--path", type=str, required=True, help="The path to the pipeline file to execute.")
-    parser.add_argument("--options", type=str, required=False, default=None, help="Additional JSON options for the pipeline execution.")
+    parser.add_argument("--monitor", action="store_true", help="If the monitor should be enabled for receiving execution information.")
+    parser.add_argument("--trackStats", action="store_true", help="If the persistent tracking of execution stats should be enabled.")
     parser.add_argument("--detached", action="store_true", help="If the script should detach the pipeline execution and terminate. Otherwise, interrupting the script (STR+C) will cancel the pipeline execution.")
     parser.set_defaults(func=_startPipeline)
 
 
 def _startPipeline(args):
     try:
-        metaData = json.loads(args.options) if args.options is not None else {}
+        monitorData = {"enabled": args.monitor, "trackStats": args.trackStats}
+        startData = {"path": args.path, "monitor": monitorData}
 
-        response = requests.post(f"http://{server}:{port}/startPipeline", json={"path": args.path, "meta": metaData})
+        response = requests.post(f"http://{server}:{port}/startPipeline", json=startData)
         res = json.loads(response.text) if response.text is not None else None
 
         if res.get("res", False):
@@ -77,6 +78,8 @@ def registerCostModelAnalysis(subparsers):
 
 
 def _analyzeCostModels(args):
+    from analysis.costModel.costModelAnalysis import performCostModelAnalysis
+
     performCostModelAnalysis(args.storagePath, args.forceRecordings)
 
 

@@ -96,3 +96,62 @@ def getPyFlinkTypeFor(dt: Optional[DataType]) -> Optional[str]:
     printWarning(f"Unsupported type {dt.typeName} for retrieving compatible PyFlink type!")
 
     return None
+
+
+def getUniformKeyBySet(para: int) -> list[int]:
+    # Simulates Flink's hashing function to calculate keys that are evenly distributed across the desired executors
+    # Flink hashes the provided key (.key_by) using its own hash function to determine the assigned subTask
+
+    # Verified overrides
+
+    if para == 1:
+        return [0]
+    elif para == 2:
+        return [0, 2]
+    elif para == 3:
+        return [0, 1, 2]
+    elif para == 4:
+        return [0, 2, 4, 8]
+    elif para == 5:
+        return [0, 5, 21, 14, 17]
+    elif para == 6:
+        return [0, 1, 2, 4, 6, 8]
+    elif para == 7:
+        return [0, 1, 2, 4, 6, 8, 14]
+    elif para == 8:
+        return [0, 2, 4, 6, 8, 19, 22]
+    elif para == 9:
+        return [0, 1, 2, 3, 4, 6, 8, 14, 19]
+    elif para == 10:
+        return [0, 1, 2, 4, 6, 8, 14, 17, 19, 22]
+
+    # Fallback
+
+    def flinkMurmurHash(code: int) -> int:
+        code &= 0xFFFFFFFF
+        code = (code * 0xcc9e2d51) & 0xFFFFFFFF
+        code = ((code << 15) | (code >> 17)) & 0xFFFFFFFF
+        code = (code * 0x1b873593) & 0xFFFFFFFF
+        code = ((code << 13) | (code >> 19)) & 0xFFFFFFFF
+        code = (code * 5 + 0xe6546b64) & 0xFFFFFFFF
+        code ^= 4  # length in bytes for one int
+        code ^= (code >> 16)
+        code = (code * 0x85ebca6b) & 0xFFFFFFFF
+        code ^= (code >> 13)
+        code = (code * 0xc2b2ae35) & 0xFFFFFFFF
+        code ^= (code >> 16)
+        return code
+
+    def subtaskForKey(key: int, maxPara: int = 128) -> int:
+        key_group = (flinkMurmurHash(key) & 0x7fffffff) % maxPara
+        return (key_group * para) // maxPara
+
+    keys = [-1] * para
+
+    for sub in range(para):
+        for k in range(10_000):
+            if subtaskForKey(k, para) == sub:
+                keys[sub] = k
+                break
+
+    return keys

@@ -1,6 +1,7 @@
 export default class HistoryAction {
-    constructor(editor) {
-        this.editor = editor;
+    constructor() {
+        this.time = Date.now();
+        this.closed = false;
     }
 
     //UI events will not be sent to server and only exist in UI history
@@ -9,7 +10,9 @@ export default class HistoryAction {
     // Events that modify the pipelineState structure/operator data
     isPipelineChangeEvent() { return false; }
 
-    async undo() {}
+    // Returns true, if the undo had any effect
+    async undo() { return true; }
 
-    async redo() {}
+    // Returns true, if the redo had any effect
+    async redo() { return true; }
 }

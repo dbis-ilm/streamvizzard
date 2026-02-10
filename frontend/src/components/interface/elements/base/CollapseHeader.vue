@@ -1,6 +1,7 @@
 <template>
   <div @click="_onClick" class="noSelect toggleHeader" :title="tooltip">{{ title }}
-    <i :class="'bi ' + (open ? 'bi-caret-' + directionOpened + '-fill' : 'bi-caret-' + directionClosed + '-fill')"></i>
+    <slot></slot>
+    <i :class="'arrow bi ' + (value ? 'bi-caret-' + directionOpened + '-fill' : 'bi-caret-' + directionClosed + '-fill')"></i>
   </div>
 </template>
 
@@ -17,7 +18,6 @@ export default {
 
   data() {
     return {
-      open: this.value,
       directionOpened: "",
       directionClosed: "",
     }
@@ -25,9 +25,7 @@ export default {
 
   methods: {
     _onClick() {
-      this.open = !this.open;
-
-      this.$emit("input", this.open);
+      this.$emit("input", !this.value);
     }
   },
 
@@ -59,9 +57,9 @@ export default {
   margin-left:-5px;
 }
 
-.toggleHeader > i {
+.toggleHeader > .arrow {
   position: absolute;
-  right: 10px;
+  right: 12px;
 }
 
 

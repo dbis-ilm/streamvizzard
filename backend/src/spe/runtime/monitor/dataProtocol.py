@@ -5,6 +5,7 @@ from typing import Dict, List
 from typing import TYPE_CHECKING
 
 from spe.common.serialization.jsonSerialization import serializeToJSON
+from spe.common.timer import Timer
 
 if TYPE_CHECKING:
     from spe.pipeline.connection import Connection
@@ -24,6 +25,10 @@ def createOperatorData(operators: List[Operator]) -> json:
 
         resData["id"] = op.id
         resData["data"] = monitor.getDisplayData()
+        resData["exTime"] = monitor.getAvgExecutionTime()
+        resData["dataSize"] = monitor.getAvgDataSize()
+        resData["totalTuples"] = monitor.getTotalTuples()
+        resData["time"] = Timer.currentTime()
 
         ops.append(resData)
 
@@ -42,8 +47,9 @@ def createConnectionData(connections: List[Connection]) -> json:
 
         cons.append({
             "id": con.id,
-            "tp": monitor.throughput,
-            "total": monitor.totalTuples
+            "tp": monitor.getAvgThroughput(),
+            "total": monitor.getTotalTuples(),
+            "time": Timer.currentTime()
         })
 
     obj["cons"] = cons

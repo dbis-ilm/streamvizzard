@@ -1,51 +1,27 @@
 import HistoryAction from "@/scripts/tools/editorHistory/HistoryAction";
-import {PipelineService} from "@/scripts/services/pipelineState/PipelineService";
-import {createConnection} from "@/scripts/tools/Utils";
+import {SvInstance} from "@/scripts/StreamVizzard";
 
 class ConnectionAction extends HistoryAction {
-    constructor(editor, con) {
-        super(editor);
-
-        this.outNodeID = con.output.node.id;
-        this.inNodeID = con.input.node.id;
-        this.outSocketKey = con.output.key;
-        this.inSocketKey = con.input.key;
-
-        this.lastTP = con.throughput;
-        this.lastTotal = con.total;
+    /** @param {SvConnection} con **/
+    constructor(con) {
+        super();
 
         this.connectionID = con.id;
+
+        this.saveData = null;
     }
 
     removeConnection() {
-        let outNode = PipelineService.getOperatorByID(this.outNodeID);
-        if(outNode == null) return;
+        let con = SvInstance.pipeline.getConnectionByID(this.connectionID);
+        if(con == null) return false;
 
-        let connection = outNode.outputs.get(this.outSocketKey).connections
-            .find(c => c.input.node.id === this.inNodeID && c.input.key === this.inSocketKey);
+        this.saveData = con.exportSaveData();
 
-        this.lastTotal = connection.total;
-        this.lastTP = connection.throughput;
-
-        this.editor.removeConnection(connection);
+        return SvInstance.pipeline.deleteConnection(con);
     }
 
     createConnection() {
-        let nodeOut = PipelineService.getOperatorByID(this.outNodeID);
-        if(nodeOut == null) return;
-
-        let nodeIn = PipelineService.getOperatorByID(this.inNodeID); //NULL when recreating deleted op
-        if(nodeIn == null) return;
-
-        let socketOut = nodeOut.outputs.get(this.outSocketKey);
-        let socketIn = nodeIn.inputs.get(this.inSocketKey);
-
-        createConnection(this.editor, socketOut, socketIn, this.connectionID);
-
-        // Update stats
-        let connection = socketOut.connections.find(c => c.input.node.id === this.inNodeID && c.input.key === this.inSocketKey);
-        connection.total = this.lastTotal;
-        connection.throughput = this.lastTP;
+        return SvInstance.pipeline.createConnectionFromSaveData(this.saveData) != null;
     }
 
     isPipelineChangeEvent() { return true; }
@@ -53,20 +29,64 @@ class ConnectionAction extends HistoryAction {
 
 export class AddConnectionAction extends ConnectionAction {
     async undo() {
-        this.removeConnection();
+        return this.removeConnection();
     }
 
     async redo() {
-        this.createConnection();
+        return this.createConnection();
     }
 }
 
 export class RemoveConnectionAction extends ConnectionAction {
+    /** @param {SvConnection} con **/
+    constructor(con) {
+        super(con);
+
+        this.saveData = con.exportSaveData();
+    }
+
     async undo() {
-        this.createConnection();
+        return this.createConnection();
     }
 
     async redo() {
-        this.removeConnection();
+        return this.removeConnection();
+    }
+}
+
+export class RerouteChangeAction extends ConnectionAction {
+    /** @param {SvConnection} con
+     * @param {Array<Object>} prevReroutes **/
+    constructor(con, prevReroutes) {
+        super(con);
+
+        this.reroutes = con.exportReroutes();
+        this.prevReroutes = prevReroutes;
+    }
+
+    isUIEvent() { return true; }
+
+    setReroutes(reroutes) {
+        let con = SvInstance.pipeline.getConnectionByID(this.connectionID);
+        if(con == null) return false;
+
+        let current = con.exportReroutes();
+
+        con.importReroutes(reroutes);
+
+        return reroutes !== current;
+    }
+
+    async undo() {
+        return this.setReroutes(this.prevReroutes);
+    }
+
+    async redo() {
+        return this.setReroutes(this.reroutes);
+    }
+
+    /** @param {SvConnection} con */
+    update(con) {
+        this.reroutes = con.exportReroutes();
     }
 }

@@ -140,7 +140,7 @@ pyFlinkOrderedJoinOpDef = PyFlinkStruct("StreamBufferedOrderedJoinFunction", """
 # Partitions the input stream into equal hash groups according to the parallelism of the operator.
 # Requires a separate hash function for each connected stream.
 
-pyFlinkOrderedJoinOpAssign = string.Template(".key_by($keyFunc, $keyFunc)"
+pyFlinkOrderedJoinOpAssign = string.Template(".$keyBy"
                                              ".process(StreamBufferedOrderedJoinFunction(env.get_config().get_auto_watermark_interval()), output_type=$typeHint)"
                                              ".set_parallelism($parallelism)")
 
@@ -196,7 +196,7 @@ pyFlinkReorderEventsOpDef = PyFlinkStruct("ReorderEventsFunction", """
 # Reorder operator assignment to the input datastream.
 # Partitions the input stream into equal hash groups according to the parallelism of the operator.
 
-pyFlinkReorderEventsOpAssign = string.Template(".key_by($keyFunc)"
+pyFlinkReorderEventsOpAssign = string.Template(".$keyBy"
                                                ".process(ReorderEventsFunction(env.get_config().get_auto_watermark_interval()), output_type=$typeHint)"
                                                ".set_parallelism($parallelism)")
 

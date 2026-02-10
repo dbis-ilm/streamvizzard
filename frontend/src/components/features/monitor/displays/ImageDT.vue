@@ -1,29 +1,38 @@
 <template>
-  <div ref="img" class="previewImg">
-    <img :src="'data:image/png;base64,' + value" class="editorInput" @dblclick.stop="" :width="width" :height="height" alt="" @pointermove.stop="" style="display:block; pointer-events: none"/>
-  </div>
+  <ResizeElement :resizeKey="'DT'" :autoHide="true" :operator="operator" class="previewImg">
+    <img :src="'data:image/png;base64,' + imgData" :class="'editorInput img ' + (imgData != null ? '' : 'empty')" @dblclick.stop="" :width="width" :height="height" alt=" " @pointermove.stop="" style="display:block; pointer-events: none"/>
+  </ResizeElement>
 </template>
 
 <script>
 
-import NumberDS from "@/components/features/monitor/displays/settings/NumberDS.vue";
-import {safeVal} from "@/scripts/tools/Utils";
+import {valueOr} from "@/scripts/tools/Utils";
+import ResizeElement from "@/components/pipeline/operator/ResizeElement.vue";
 
 export default {
-  props: ['value', 'control'],
+  components: {ResizeElement},
+  props: {
+    /** @type {SvOperator} **/
+    operator: {required: true},
+    settings: {type: Object, required: true},
+    value: {required: true},
+  },
 
   data() {
     return {
+      imgData: null,
       width: 220,
       height: 220
     }
   },
 
-  methods: {
-    setValue(value) {
-      this.value = value != null ? value["data"] : null;
-    },
+  watch: {
+    value() {
+      this.imgData = this.value != null ? this.value["data"] : null;
+    }
+  },
 
+  methods: {
     onResize(entries) {
       let newW = 0;
       let newH = 0;
@@ -36,17 +45,13 @@ export default {
       this.width = newW;
       this.height = newH;
 
-      //Do not override other settings
-      let set = this.control.settings;
-      if(set == null) return;
+      // Do not override other settings | Clone to trigger update
+      let set = valueOr(Object.assign({}, this.operator.monitor.displayModeSettings), {});
+
       set.w = newW;
       set.h = newH;
 
-      this.control.onSettingsChanged(set);
-    },
-
-    getSettingsOptions(props, propsDef) {
-      return [{"key": "mult", "name": "Multiplier", "value": props.mult, "desc": "The value to multiply with the image", "default": safeVal(propsDef.mult), "template": NumberDS}];
+      this.operator.monitor.updateDisplayModeSettings(set);
     },
   },
   mounted() {
@@ -63,7 +68,6 @@ export default {
 <style scoped>
 
 .previewImg {
-  background: white;
   text-align: center;
 
   height: 100%;
@@ -71,6 +75,17 @@ export default {
 
   min-width: 220px;
   min-height: 220px;
+}
+
+.img {
+  background: var(--main-hover-color);  /* Workaround to hide jagged edges on scroll */
+  border-radius: 2px;
+  border: 1px solid var(--main-hover-color);
+  box-sizing: border-box;
+}
+
+.img.empty {
+  background: white;
 }
 
 </style>

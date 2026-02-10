@@ -1,16 +1,23 @@
 <template>
-  <div ref="plot" style="min-width:220px; min-height: 220px; width: 220px; height: 220px;"></div>
+  <ResizeElement :resizeKey="'DT'" :autoHide="true" :operator="operator" ref="plot" class="dtPlot"></ResizeElement>
 </template>
 
 <script>
+
+// Note: Plotly blocks pointermove events to allow interaction with the plot
+
 import Plotly from 'plotly.js-dist'
-import BoolDS from "@/components/features/monitor/displays/settings/BoolDS.vue";
-import StringDS from "@/components/features/monitor/displays/settings/StringDS.vue";
-import RangeDS from "@/components/features/monitor/displays/settings/RangeDS.vue";
 import {safeVal} from "@/scripts/tools/Utils";
+import ResizeElement from "@/components/pipeline/operator/ResizeElement.vue";
 
 export default {
-  props: ['value', 'control'],
+  components: {ResizeElement},
+  props: {
+    /** @type {SvOperator} */
+    operator: {required: true},
+    settings: {type: Object, required: true},
+    value: {required: true},
+  },
 
   data() {
     return {
@@ -24,33 +31,20 @@ export default {
     }
   },
 
+  watch: {
+    value() {
+      this._updateData(this.value);
+    },
+
+    settings: {
+      handler() {
+        this._applySettings(this.settings);
+        this._updateData(this.value);
+      }, deep: true
+    }
+  },
+
   methods: {
-    setValue(data) {
-      // In case of buffer not all elements might be transmitted during debug traversal due to message transfer optimization
-
-      this.value = data;
-
-      if(data != null) {
-        this._handlePlots(data.plots, data.time);
-      } else {
-        this.bufferX = [];
-        this.bufferY = [];
-
-        Plotly.restyle(this.$refs.plot, {'y': null, 'x': null});
-      }
-    },
-
-    getSettingsOptions(props, propsDef) {
-      //Expose some options to the user
-      return [{"key": "xvisible", "name": "Show X Axis", "value": safeVal(props.xvisible, true), "desc": "Displays the x axis", "default": safeVal(propsDef.xvisible, true), "template": BoolDS},
-        {"key": "yvisible", "name": "Show Y Axis", "value": safeVal(props.yvisible, true), "desc": "Displays the y axis", "default": safeVal(propsDef.yvisible, true), "template": BoolDS},
-        {"key": "xtitle", "name": "X Title", "value": props.xtitle, "desc": "The title of the x axis", "default": safeVal(propsDef.xtitle), "template": StringDS},
-        {"key": "ytitle", "name": "Y Title", "value": props.ytitle, "desc": "The title of the y axis", "default": safeVal(propsDef.ytitle), "template": StringDS},
-        {"key": "xrange", "name": "X Range", "value": props.xrange, "desc": "The data range of the x axis", "default": safeVal(propsDef.xrange), "template": RangeDS},
-        {"key": "yrange", "name": "Y Range", "value": props.yrange, "desc": "The data range of the y axis", "default": safeVal(propsDef.yrange), "template": RangeDS},
-        {"key": "maxBufferElements", "name": "Max. Points", "value": props.maxBufferElements, "desc": "How many data points to display at max per plot (sample otherwise)", "default": safeVal(propsDef.maxBufferElements), "template": StringDS}];
-    },
-
     _handlePlots(plots, time) {
       let xs = [];
       let ys = [];
@@ -90,6 +84,7 @@ export default {
           let xElement = 0
           let yElement = 0
 
+          //TODO: Default xAxis label might be wrong (twoAxis with timestamp vs tupleCount)
           if (twoAxis) {
             if(this.useXDif) xElement = -(firstElement[0] - entry[0]);
             else xElement = entry[0];
@@ -135,15 +130,15 @@ export default {
         ys.push(y);
       }
 
-      Plotly.restyle(this.$refs.plot, {'y': ys, 'x': xs});
+      Plotly.restyle(this.$refs.plot.$el, {'y': ys, 'x': xs});
     },
 
-    setSettings(props) {
+    _applySettings(props) {
       // PLOTS
 
-      if(props.plots !== undefined) {
+      if(props.plots != null) {
         //Delete old traces
-        while(this.$refs.plot.data.length>0) Plotly.deleteTraces(this.$refs.plot, 0);
+        while(this.$refs.plot.$el.data.length>0) Plotly.deleteTraces(this.$refs.plot.$el, 0);
 
         let p = [];
 
@@ -152,46 +147,49 @@ export default {
             x: [],
             y: [],
             type:"scatter",
+            yaxis: {title: {text: "HI"}},
             mode: safeVal(plot.mode, ""),
             hovertemplate: safeVal(plot.hover, "%{x:.2f}<br>%{y:.2f}<extra></extra>"),
             line: plot.line
           })
         }
 
-        Plotly.addTraces(this.$refs.plot, p);
+        Plotly.addTraces(this.$refs.plot.$el, p);
       }
 
       // LAYOUT
 
       let layout = {};
 
-      this.useXDif = props.useXDif !== undefined ? props.useXDif : this.useXDif;
-      this.useYDif = props.useYDif !== undefined ? props.useYDif : this.useXDif;
+      this.useXDif = props.useXDif != null ? props.useXDif : this.useXDif;
+      this.useYDif = props.useYDif != null ? props.useYDif : this.useXDif;
 
-      this.useBuffer = props.useBuffer !== undefined ? props.useBuffer : this.useBuffer;
-      this.maxBufferElements = props.maxBufferElements !== undefined ? parseInt(props.maxBufferElements) : this.maxBufferElements;
+      this.useBuffer = props.useBuffer != null ? props.useBuffer : this.useBuffer;
+      this.maxBufferElements = props.maxBufferElements != null ? parseInt(props.maxBufferElements) : this.maxBufferElements;
 
-      let xRange = safeVal(props.xrange);
-      let yRange = safeVal(props.yrange);
+      layout["xaxis.range"] = props.xrange;
+      layout["yaxis.range"] = props.yrange;
 
-      let xVisible = safeVal(props.xvisible);
-      let yVisible = safeVal(props.yvisible);
+      layout["xaxis.visible"] = props.xvisible;
+      layout["yaxis.visible"] = props.yvisible;
 
-      let xTitle = safeVal(props.xtitle);
-      let yTitle = safeVal(props.ytitle);
+      layout["xaxis.title.text"] = props.xtitle;
+      layout["yaxis.title.text"] = props.ytitle;
 
-      if(xRange != null) layout["xaxis.range"] = xRange;
-      if(yRange != null) layout["yaxis.range"] = yRange;
+      Plotly.relayout(this.$refs.plot.$el, layout);
+    },
 
-      if(xVisible != null) layout["xaxis.visible"] = xVisible;
-      if(yVisible != null) layout["yaxis.visible"] = yVisible;
+    _updateData(data) {
+      // In case of buffer not all elements might be transmitted during debug traversal due to message transfer optimization
 
-      if(xTitle != null) layout["xaxis.title.text"] = xTitle;
-      if(yTitle != null) layout["yaxis.title.text"] = yTitle;
+      if(data != null) {
+        this._handlePlots(data.plots, data.time);
+      } else {
+        this.bufferX = [];
+        this.bufferY = [];
 
-      Plotly.relayout(this.$refs.plot, layout);
-
-      this.setValue(this.value); // Update data
+        Plotly.restyle(this.$refs.plot.$el, {'y': null, 'x': null});
+      }
     },
 
     _getPlotConfig() {
@@ -221,18 +219,6 @@ export default {
       };
     },
 
-    onResize(entries) {
-      let newW = 0;
-      let newH = 0;
-
-      entries.forEach(entry => {
-        newW = entry.contentRect.width;
-        newH = entry.contentRect.height;
-      });
-
-      Plotly.relayout(this.$refs.plot, {"width": newW, "height": newH, "autosize": true});
-    },
-
     reset() {
       this.bufferX = [];
       this.bufferY = [];
@@ -240,16 +226,20 @@ export default {
   },
 
   mounted() {
-    Plotly.newPlot( this.$refs.plot, [{
+    Plotly.newPlot( this.$refs.plot.$el, [{
       x: [],
       y: [],
       type:"scatter",
       mode:"", //Auto
       hovertemplate: "%{x:.2f}<br>%{y:.2f}<extra></extra>"
-    }], this._getPlotConfig(), {displayModeBar: false});
+    }], this._getPlotConfig(), {displayModeBar: false, dragMode: false, scrollZoom: false}).then((gd)=> {
+      Plotly.relayout(gd, { autosize: true }); // Force initial layout
 
-    this.resizeObserver = new ResizeObserver(this.onResize);
-    this.resizeObserver.observe(this.$el);
+      this.resizeObserver = new ResizeObserver(() => Plotly.relayout(this.$refs.plot.$el, {"autosize": true}));
+      this.resizeObserver.observe(this.$el);
+    });
+
+    this._applySettings(this.settings);
   },
 
   beforeDestroy() {
@@ -260,4 +250,19 @@ export default {
 
 <style scoped>
 
+.dtPlot {
+  min-width:220px;
+  min-height: 220px;
+  width: 220px;
+  height: 220px;
+}
+
+</style>
+
+<style>
+.dtPlot svg {
+  border-radius: 2px;
+  border: 1px solid var(--main-hover-color);
+  box-sizing: border-box;
+}
 </style>

@@ -141,15 +141,14 @@ class PipelineMonitor(RuntimeService):
 
         with self._updatedOperatorLock:
             for operator in self._updatedOperators:
-                if operator.getMonitor().isDataEnabled():
-                    elm = self._operatorSendState.get(operator, None)
+                elm = self._operatorSendState.get(operator, None)
 
-                    if elm is None:
-                        elm = OperatorSocketTuple(self._onOpTupleSend, operator)
-                        self._operatorSendState[operator] = elm
-                        self.serverManager.sendSocketData(elm)
-                    else:
-                        ...  # Not required since getData call with get most recent operator data
+                if elm is None:
+                    elm = OperatorSocketTuple(self._onOpTupleSend, operator)
+                    self._operatorSendState[operator] = elm
+                    self.serverManager.sendSocketData(elm)
+                else:
+                    ...  # Not required since getData call with get most recent operator data
 
             hasNewData = len(self._updatedOperators) > 0
             self._updatedOperators.clear()

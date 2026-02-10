@@ -8,6 +8,7 @@ import traceback
 from typing import TYPE_CHECKING
 
 from spe.pipeline.connection import Connection
+from spe.pipeline.pipeline import Pipeline
 from spe.pipeline.socket import Socket
 from spe.runtime.compiler.compilerRes import CompilerRes
 from spe.runtime.compiler.codegeneration.frameworks.frameworkCompiler import FrameworkCompiler
@@ -24,17 +25,19 @@ class StreamVizzardFC(FrameworkCompiler):
         super().__init__(framework, clusterID, generator)
 
     def generateCode(self) -> CompilerRes:
-        opData = [op.operator.exportOperatorData() for op in self.opNodes]
+        pipeline = Pipeline()
 
-        pipelineData = {"operators": opData}
+        for op in self.opNodes:
+            pipeline.registerOperator(op.operator)
+
+            for con in op.operator.getConnections(True, True):
+                pipeline.registerConnection(con)
+
+        if (errorMsg := pipeline.validate()) is not None:
+            return CompilerRes(f"Couldn't generate StreamVizzard pipeline!\n {errorMsg}")
 
         from spe.pipeline.pipelineManager import PipelineManager
-        pipelineRes = PipelineManager.createPipeline(pipelineData)
-
-        if pipelineRes.hasError():
-            return CompilerRes(f"Couldn't generate StreamVizzard pipeline!\n {pipelineRes.errorMsg}")
-
-        pipelineUISaveFile = PipelineManager.generateUISaveFile(pipelineRes.pipeline)
+        pipelineUISaveFile = PipelineManager.generateUISaveFile(pipeline)
 
         outputFolder = os.path.join(self.generator.getOutputPath(), "StreamVizzard_" + str(self.clusterID))
         os.makedirs(outputFolder, exist_ok=True)
@@ -55,8 +58,8 @@ class StreamVizzardFC(FrameworkCompiler):
             with open(os.path.join(outputFolder, "readme.md"), "w") as f:
                 f.write(textwrap.dedent("""
                     Usage Options:
-                    1) Load the pipeline.json file with the Web-Editor to execute the pipeline
-                    2) Run the cli (src/cli.py) with the 'startPipeline' subcommand and the pipeline.json as the file path
+                    1) Load the pipeline.json file with the Web-Editor to execute the pipeline.
+                    2) Run the cli (src/cli.py) with the 'startPipeline' subcommand and the pipeline.json as the file path.
                        For docker setups, the cli can be reached with docker exec -it svbackend svcli
                     """).strip())
         except Exception:

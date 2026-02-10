@@ -1,14 +1,16 @@
 import asyncio
 import json
-from threading import Timer
+import threading
 from typing import Optional, List
 
+from spe.common.timer import Timer
 from spe.pipeline.operators.base.dataTypes.window import Window
 from spe.pipeline.operators.base.operators.windows.windowOperator import WindowOperator
 from spe.runtime.compiler.definitions.compileDefinitions import CompileFramework, CompileComputeMode, \
     CompileParallelism, CompileLanguage
 from spe.runtime.compiler.definitions.compileOpFunction import CodeTemplateCOF
 from spe.runtime.compiler.definitions.compileOpSpecs import CompileOpSpecs
+from spe.runtime.compiler.opCompileConfig import OpCompileConfig
 from spe.runtime.debugger.history.historyState import HistoryState
 from spe.common.tuple import Tuple
 
@@ -20,7 +22,7 @@ class TumblingWindowTime(WindowOperator):
         self.value = 0
 
         self.buffer: List[Tuple] = list()
-        self.timer: Optional[Timer] = None
+        self.timer: Optional[threading.Timer] = None
 
     def setData(self, data: json):
         self.value = float(data["value"])
@@ -32,7 +34,7 @@ class TumblingWindowTime(WindowOperator):
                 self.timer = None
 
             if self.value > 0:
-                self.timer = Timer(self.value, self._distributeBuffer)  # This breaks the debugging, not possible in this case
+                self.timer = threading.Timer(self.value, self._distributeBuffer)  # This breaks the debugging, not possible in this case
                 self.timer.start()
 
     def getData(self) -> dict:
@@ -42,7 +44,7 @@ class TumblingWindowTime(WindowOperator):
         super(TumblingWindowTime, self).onRuntimeCreate(eventLoop)
 
         if self.value > 0:
-            self.timer = Timer(self.value, self._distributeBuffer)
+            self.timer = threading.Timer(self.value, self._distributeBuffer)
             self.timer.start()
 
     def _distributeBuffer(self):
@@ -61,14 +63,18 @@ class TumblingWindowTime(WindowOperator):
             return
 
         if len(self.buffer) > 0:
+            start = Timer.currentRealTime()
+
             r = Window(self.buffer.copy())
             self.buffer.clear()
 
             tup = self.createTuple((r,))  # If debugging should be supported we need to create a DT manually for the res tuple
 
-            asyncio.ensure_future(self._onTupleProcessed(tup, self.value), loop=self._eventLoop)
+            exDur = Timer.currentRealTime() - start  # Actual processing time instead of "waitingTime" of window
 
-        self.timer = Timer(self.value, self._distributeBuffer)
+            asyncio.ensure_future(self._onTupleProcessed(tup, exDur), loop=self._eventLoop)
+
+        self.timer = threading.Timer(self.value, self._distributeBuffer)
         self.timer.start()
 
     def _execute(self, tupleIn: Tuple) -> Optional[Tuple]:
@@ -82,16 +88,18 @@ class TumblingWindowTime(WindowOperator):
         return 1 / self.value
 
     def getCompileSpecs(self) -> List[CompileOpSpecs]:
-        # window_all for non-keyed streams, window else
-        def getPyFlinkCode(compileConfig):
+        def getPyFlinkCode(cfg: OpCompileConfig):
             from spe.runtime.compiler.codegeneration.frameworks.pyFlink.pyFlinkCodeTemplate import PyFlinkCodeTemplate
+
+            # Despite the availability of TumblingEventTimeWindows, processing time more accurately reflects the SV logic
+            # Moreover, currently, EventTime can not be leveraged by the user!
 
             pyFlinkCode = PyFlinkCodeTemplate({
                 PyFlinkCodeTemplate.Section.IMPORTS: """
-            from pyflink.datastream.window import TumblingEventTimeWindows
+            from pyflink.datastream.window import TumblingProcessingTimeWindows
             from pyflink.common.time import Time""",
-                PyFlinkCodeTemplate.Section.ASSIGNMENTS: f"""
-            $inDS.window_all(TumblingEventTimeWindows.of(Time.seconds({self.value})))"""})  # Currently only for non-keyed streams
+                PyFlinkCodeTemplate.Section.ASSIGNMENTS:
+                    self._getPyFlinkCompileAssignment(f"TumblingProcessingTimeWindows.of(Time.milliseconds({int(self.value * 1000)}))", cfg.parallelismCount)})
 
             return pyFlinkCode
 

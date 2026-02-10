@@ -3,7 +3,7 @@
     <hr>
     <div>Connection ID: {{conID}}</div>
 
-    <div v-if="errorMsg != null" class="errorMsg">{{errorMsg}}</div>
+    <div v-if="errorMsg != null" style="margin-top: 5px;" class="errorMsg">{{errorMsg}}</div>
 
     <div class="formInputContainer">
       <span class="formInputLabel limitedText alignLeft" title="The connector used to send data between the clusters">Connector:&nbsp;</span>
@@ -19,15 +19,21 @@
 
 <script>
 
-import {PipelineService} from "@/scripts/services/pipelineState/PipelineService";
 import {
   matchOtherClusterSideConType,
   matchOtherClusterSideParams
-} from "@/scripts/components/compiler/CompileUtils";
+} from "@/scripts/features/compiler/CompileUtils";
+import SvOperator from "@/scripts/pipeline/operators/SvOperator";
+import {OpCompileCfgClusterCon} from "@/scripts/features/compiler/OperatorCompiler";
 
 export default {
-  name: 'ClusterConnection',
-  props: ["node", "options", "connectorCfg"],
+  props: {
+    operator: {type: SvOperator, required: true},
+    /** @type {Array<OpCompileCCOption>} **/
+    options: {type: Array, required: true},
+    connectorCfg: {type: OpCompileCfgClusterCon, required: true},
+  },
+
   data() {
     return {
       connectorOptions: [],
@@ -36,18 +42,15 @@ export default {
   },
 
   computed: {
-    selected() {
-      return this.connectorCfg.selected;
-    },
-
     conID() {
-      return this.connectorCfg["conID"]
+      return this.connectorCfg.conID;
     }
   },
 
   watch: {
-    selected() {
+    connectorCfg() {
       // Watch for changes in the data from server
+      // On each response a new cfg obj is created which triggers the watcher
       this._updateConnectorOptions();
     }
   },
@@ -59,35 +62,35 @@ export default {
       let selectedFound = false;
 
       for(let o of this.options) {
-        this.connectorOptions.push(o["ourConType"]);
+        this.connectorOptions.push(o.ourConType);
 
-        if(o["ourConType"] === this.connectorCfg["conType"]) selectedFound = true;
+        if(o.ourConType=== this.connectorCfg.conType) selectedFound = true;
       }
 
       if(this.connectorOptions.length === 0) this.errorMsg = "No supported connectors found!";
 
       if(!selectedFound) {
         // Choose first option or none if no options exist
-        this.connectorCfg["conType"] = this.options[0]?.["ourConType"] ?? null;
-        this.connectorCfg["params"] = this.options[0]?.["ourConParams"] ?? null;
+        this.connectorCfg.conType = this.options[0]?.ourConType ?? null;
+        this.connectorCfg.params = this.options[0]?.ourConParams ?? null;
       }
     },
 
     _onParamChange(paramKey) {
-      matchOtherClusterSideParams(this.node.id, this.conID, paramKey, this.connectorCfg["params"][paramKey]);
+      matchOtherClusterSideParams(this.operator.id, this.conID, paramKey, this.connectorCfg.params[paramKey]);
     },
 
     _onSelectConnectorOption(event) {
       for(let o of this.options) {
-        if(o["ourConType"] === event) {
-          this.connectorCfg["conType"] = o["ourConType"];
-          this.connectorCfg["params"] = {...o["ourConParams"]};  // Copy or it will override option params on change (v-model)
+        if(o.ourConType === event) {
+          this.connectorCfg.conType = o.ourConType;
+          this.connectorCfg.params = {...o.ourConParams};  // Copy or it will override option params on change (v-model)
 
           this._updateConnectorOptions();
 
           // Adapt other side of the cluster to select a matching connector to our new, including params
 
-          matchOtherClusterSideConType(this.node.id, this.conID, this.connectorCfg["conType"], this.connectorCfg["params"]);
+          matchOtherClusterSideConType(this.operator.id, this.conID, this.connectorCfg.conType, this.connectorCfg.params);
 
           return;
         }
@@ -95,8 +98,8 @@ export default {
     },
 
     _onHover(over) {
-      let con = PipelineService.getConnectionByID(this.conID);
-      con.hover(over);
+      let con = this.$streamvizzard.pipeline.getConnectionByID(this.conID);
+      con.highlighted = over;
     }
   },
 

@@ -114,7 +114,7 @@ class FrameworkCompiler(ABC):
             kafkaConnector = KafkaSink(self._generateNewOpID())
             kafkaConnector.setData({"port": cc.params["port"], "broker": cc.params["broker"],
                                     "encoding": "utf-8", "topic": cc.params["topic"],
-                                    "maxRequestSize": kafkaConnector.maxRequestSize})
+                                    "linger": kafkaConnector.linger, "maxRequestSize": kafkaConnector.maxRequestSize})
 
             return self._setupConnector(socket, kafkaConnector, StringType(), None,
                                         cc.conType, SerializationMode.JSON, language, rootOpData)

@@ -20,7 +20,7 @@ from provinspector.utils.dumper import JsonDumper
 from spe.runtime.debugger.provenance.provQueryParser import ProvQueryParser
 from spe.common.timer import Timer
 from streamVizzard import StreamVizzard
-from spe.pipeline.pipelineUpdates import OperatorAddedPU, OperatorRemovedPU, OperatorDataUpdatedPU, \
+from spe.pipeline.pipelineUpdates import OperatorAddedPU, OperatorRemovedPU, OperatorParamsUpdatedPU, \
     ConnectionAddedPU, ConnectionRemovedPU, PipelineUpdate
 from spe.runtime.debugger.debugStep import DebugStepType
 
@@ -187,15 +187,17 @@ class ProvenanceInspector:
 
         self._registerEvent.set()
 
-    def queryFromTemplate(self, inputData):
+    def queryFromTemplate(self, inputData) -> bool:
         if not self._isAccessible():
-            return None
+            return False
 
         if self._queryThread is not None:
-            return  # Last query still running
+            return False  # Last query still running
 
         self._queryThread = threading.Thread(target=self._queryThreadFunc, args=(inputData,))
         self._queryThread.start()
+
+        return True
 
     def queryProvenance(self, query: str):
         if not self._isAccessible():
@@ -225,13 +227,13 @@ class ProvenanceInspector:
 
         if queryTemplate is None:
             returnError()
-            return
+            return None
 
         res = self.queryProvenance(queryTemplate.generateQuery())
 
         if res is None:
             returnError()
-            return
+            return None
 
         extractedResult = queryTemplate.extractResult(self, res)
 
@@ -473,7 +475,7 @@ class ProvenanceInspector:
         elif isinstance(pu, OperatorRemovedPU):
             op = self._debugger.getRuntimeManager().getPipeline().getOperator(pu.opID)
             return OperatorDeletionPipelineChangeData(uniqueID, pu.opID, op.__class__.__name__)
-        elif isinstance(pu, OperatorDataUpdatedPU):
+        elif isinstance(pu, OperatorParamsUpdatedPU):
             op = self._debugger.getRuntimeManager().getPipeline().getOperator(pu.opID)
             return OperatorModificationPipelineChangeData(uniqueID, pu.opID, op.__class__.__name__, pu.param, pu.opData[pu.param])
         elif isinstance(pu, ConnectionAddedPU):

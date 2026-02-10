@@ -1,5 +1,5 @@
 <template>
-  <div class="secondButton noSelect" @click="onClick">{{ label }}</div>
+  <div class="secondButton noSelect" @click="onClick">{{ label }}<slot/></div>
 </template>
 
 <script>
