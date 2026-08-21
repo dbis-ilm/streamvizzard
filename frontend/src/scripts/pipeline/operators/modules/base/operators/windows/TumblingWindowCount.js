@@ -6,7 +6,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _TumblingWindowCount extends Definition {
     constructor(pathIdentifier){
-        super("TumblingWindowCount", "Tumb. Window Count", pathIdentifier);
+        super("TumblingWindowCount", "Tumb. Window Count", pathIdentifier,
+            "Emits non-overlapping batches of input data tuples based on a defined number of elements.");
     }
 
     build(operator) {

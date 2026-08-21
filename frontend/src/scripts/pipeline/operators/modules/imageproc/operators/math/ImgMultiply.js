@@ -6,7 +6,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _ImgMultiply extends Definition {
     constructor(pathIdentifier){
-        super("ImgMultiply", "Img Multiply", pathIdentifier);
+        super("ImgMultiply", "Img Multiply", pathIdentifier,
+            "Multiplies each pixel of the input image by a numerical value.");
     }
 
     build(operator) {

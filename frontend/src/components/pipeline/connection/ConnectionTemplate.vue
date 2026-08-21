@@ -1,6 +1,6 @@
 <template>
-  <div :class="['connection', connection.highlighted && 'selected']" @mouseover="_onMouseOver" @mouseout="_onMouseOut"
-       :style="connection.order != null ? 'z-index: ' + connection.order : ''">
+  <div :class="['connection', connection.highlighted && 'selected', focused && 'focused']" @mouseover="_onMouseOver" @mouseout="_onMouseOut"
+       @contextmenu="_onContextMenu" :style="connection.order != null ? 'z-index: ' + connection.order : ''">
     <svg>
       <path class="visualPath" :d="pathData" :style="'stroke-dashoffset: ' + connection.strokeDashOffset"></path>
       <path class="interactPath" :d="pathData" @click="_onPathClick">
@@ -28,9 +28,18 @@ export default {
   computed: {
     hoverTitle() {
       return "Connection ID: " + this.connection.id + "\nThroughput: "
-      + this.connection.monitor.throughput.toFixed(2)
-      + " tuples / s\nTotal tuples: " + this.connection.monitor.totalTuples + "\n"
+      + this.connection.monitor.executionStats.currentThroughput.toFixed(2)
+      + " tuples / s\nTotal tuples: " + this.connection.monitor.executionStats.totalTuples + "\n"
       + "(Click to add rerouting points!)";
+    },
+
+    focused() {
+      // Focus connection if any of its reroutes is currently focused
+      for(let p of this.connection.reroutes) {
+        if(this.$streamvizzard.editor.focusedObjects.has(p)) return true;
+      }
+
+      return false;
     }
   },
 
@@ -80,6 +89,13 @@ export default {
     _onOpTransformUpdated(operator) {
       if(operator === this.connection.input.operator || operator === this.connection.output.operator)
         this.$nextTick(this.updatePathData); // Op needs some time to update socket DOMRects after transformation
+    },
+
+    _onContextMenu(e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      this.$streamvizzard.editor.openConnectionContextMenu(e.clientX, e.clientY, this.connection);
     },
 
     _onMouseOver() {
@@ -133,6 +149,10 @@ svg {
 
 .connection.selected path.visualPath {
   stroke: var(--main-hover-color);
+}
+
+.connection.focused path.visualPath {
+  stroke: var(--main-font-color);
 }
 
 </style>

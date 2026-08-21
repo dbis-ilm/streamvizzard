@@ -37,29 +37,45 @@ export default {
       if(this.modeSelected == null) return {"x": xData, "y": yData};
 
       if(this.modeSelected.type === "Tp") {
-        let buffer = SvInstance.pipeline.getConnectionByID(this.modeSelected.conID).monitor.tpBuffer;
+        let buffer = SvInstance.pipeline.getConnectionByID(this.modeSelected.conID).monitor.executionStats.entries;
 
         for(let b of buffer) {
-          xData.push(b["time"]);
-          yData.push(b["tp"]);
+          xData.push(b.time);
+          yData.push(b.throughput);
         }
       } else if(this.modeSelected.type === "ExTime") {
-        let buffer = this.operator.monitor.statsBuffer;
+        let buffer = this.operator.monitor.executionStats.entries;
 
         for(let b of buffer) {
-          xData.push(b["time"]);
-          yData.push(b["exTime"]);
+          xData.push(b.time);
+          yData.push(b.exTime);
         }
       } else if(this.modeSelected.type === "DataSize") {
-        let buffer = this.operator.monitor.statsBuffer;
+        let buffer = this.operator.monitor.executionStats.entries;
 
         for(let b of buffer) {
-          xData.push(b["time"]);
-          yData.push(b["dataSize"] / 1000); // Server sends bytes -> show KB
+          xData.push(b.time);
+          yData.push(b.dataSize);
         }
+      } else if(this.modeSelected.type === "DisplayTime") {
+        let buffer = this.operator.monitor.executionStats.entries;
+
+        let y2Data = [];
+
+        for(let b of buffer) {
+          let renderTime = b.displayRenderTime;
+
+          if(renderTime === null) continue; // Only show entries with captured render time (some might be missed for high-frequency updates)
+
+          xData.push(b.time);
+          yData.push(b.displayFetchTime);
+          y2Data.push(renderTime);
+        }
+
+        return {"x": xData, "y": [yData,y2Data]};
       }
 
-      return {"x": xData, "y": yData};
+      return {"x": xData, "y": [yData]};
     }
   },
 
@@ -81,15 +97,17 @@ export default {
         this._onModeOptionsChanged();
     },
 
-    _onModeOptionsChanged() {
+    _onModeOptionsChanged(initial=false) {
       let options = [{"title": "Execution Time", "key": "ExecutionTime", "type": "ExTime"},
-        {"title": "Data Size", "key": "DataSize", "type": "DataSize"}];
+        {"title": "Output Data Size", "key": "DataSize", "type": "DataSize"}];
 
       for(const o of this.operator.outputs){
         for(let con of o.connections) {
           options.push({"title": "Throughput (Con. " + con.id + ")", "key": "Tp" + con.id, "type": "Tp", "conID": con.id});
         }
       }
+
+      options.push({"title": "Display Time", "key": "DisplayTime", "type": "DisplayTime"});
 
       this.modeOptions = options;
 
@@ -99,19 +117,71 @@ export default {
       // Fallback
       if(this.modeSelected == null) this.modeSelected = this.modeOptions.find(el => el.key === "ExecutionTime");
 
-      this._onModeSelected(this.modeSelected);
+      this._onModeSelected(this.modeSelected, initial);
     },
 
-    _onModeSelected(mode) {
+    _onModeSelected(mode, force=false) {
+      if(this.modeSelected === mode && !force) return;
+
       this.modeSelected = mode;
       this.$streamvizzard.monitor.sideBarStatMode = this.modeSelected.type;
 
       let yLabel = "";
-      if(this.modeSelected.key === "ExecutionTime") yLabel = "ms";
+      if(this.modeSelected.key === "ExecutionTime" || this.modeSelected.key === "DisplayTime") yLabel = "ms";
       else if(this.modeSelected.key === "DataSize") yLabel = "KB";
       else yLabel = "tup/s";
 
-      Plotly.relayout(this.$refs.plot, {"yaxis.title.text": yLabel});
+      let annotations = null;
+
+      while(this.$refs.plot.data.length > 0) Plotly.deleteTraces(this.$refs.plot, 0);
+
+      if(this.modeSelected.key === "DisplayTime") {
+        Plotly.addTraces(this.$refs.plot, {
+          type: 'scatter',
+          name: 'Fetch',
+          yaxis: {type: "linear"},
+          xaxis: {type: "linear"},
+          stackgroup: 'one'
+        });
+
+        Plotly.addTraces(this.$refs.plot, {
+          type: 'scatter',
+          name: 'Render',
+          yaxis: {type: "linear"},
+          xaxis: {type: "linear"},
+          stackgroup: 'one'
+        });
+
+        annotations = [{
+            text: "Fetch Data  <span style='color:blue'>━━━</span> ",
+            x: 0,
+            y: -0.235,
+            xref: "paper",
+            yref: "paper",
+            xanchor: "left",
+            showarrow: false
+          }, {
+            text: "<span style='color:orange'>━━━</span>  Render Data",
+            x: 1,
+            y: -0.235,
+            xref: "paper",
+            yref: "paper",
+            xanchor: "right",
+            showarrow: false
+          }
+        ];
+      } else {
+        Plotly.addTraces(this.$refs.plot, {
+          type: 'scatter',
+          mode: 'lines',
+          name: 'trace0',
+          yaxis: {type: "linear"},
+          xaxis: {type: "linear"},
+          stackgroup: 'one' // Adds fill to line
+        });
+      }
+
+      Plotly.relayout(this.$refs.plot, {"yaxis.title.text": yLabel, "annotations": annotations});
       Plotly.restyle(this.$refs.plot, {"hovertemplate": "%{y:.2f} " + yLabel + "<extra></extra>"});
     },
 
@@ -125,7 +195,7 @@ export default {
           deltaX.push((xData[i] - last));
       }
 
-      Plotly.restyle(this.$refs.plot, {'y': [yData], 'x': [deltaX], });
+      Plotly.restyle(this.$refs.plot, {'y': yData, 'x': [deltaX], });
     },
 
     _getPlotConfig() {
@@ -158,20 +228,14 @@ export default {
   },
 
   mounted() {
-    Plotly.newPlot( this.$refs.plot, [{
-      x: [],
-      y: [],
-      type:"scatter",
-      mode:"", //Auto
-      hovertemplate: "%{y:.2f}<extra></extra>",
-    }], this._getPlotConfig(), {displayModeBar: false});
+    Plotly.newPlot( this.$refs.plot, [], this._getPlotConfig(), {displayModeBar: false});
 
     this.resizeObserver = new ResizeObserver(() => Plotly.relayout(this.$refs.plot, {"autosize": true}));
     this.resizeObserver.observe(this.$el);
 
     registerEvent([EVENTS.CONNECTION_CREATED, EVENTS.CONNECTION_REMOVED], this._onConChanged);
 
-    this._onModeOptionsChanged();
+    this._onModeOptionsChanged(true);
   },
 
   beforeDestroy() {

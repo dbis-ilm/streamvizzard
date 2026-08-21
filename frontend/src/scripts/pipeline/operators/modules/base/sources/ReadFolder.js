@@ -8,7 +8,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _ReadFolder extends Definition {
     constructor(pathIdentifier){
-        super("ReadFolder", "Read Folder", pathIdentifier, true);
+        super("ReadFolder", "Read Folder", pathIdentifier,
+            "Reads the contents of a folder and streams the results (file/folder paths), element-by-element", true);
     }
 
     build(operator) {

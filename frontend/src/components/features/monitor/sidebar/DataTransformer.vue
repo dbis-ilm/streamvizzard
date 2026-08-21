@@ -30,9 +30,10 @@ export default {
       oldValue: "",
       value: "",
 
-      codeTooltip: "Supports arbitrary Python code and imports which will be executed from top to bottom.\n" +
+      codeTooltip: "Supports arbitrary Python code and imports which will be executed from top to bottom.\n\n" +
           "Input data of the selected display socket will be passed in an 'input' Python object.\n" +
-          "Must return a single Python value/object as a result to display."
+          "Must return a single Python value/object as a result to display.\n\n" +
+          "Warning: The original 'input' data object in memory must not be modified!"
     }
   },
 

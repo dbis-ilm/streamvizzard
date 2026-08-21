@@ -1,6 +1,6 @@
-import json
-from typing import Optional, List
+from typing import Optional, List, Dict
 
+from spe.common.dataType import StringType
 from spe.common.serialization.jsonSerialization import deserializeFromJSON
 from spe.pipeline.operators.operator import Operator
 from spe.common.tuple import Tuple
@@ -11,6 +11,7 @@ from spe.runtime.compiler.definitions.compileOpFunction import CodeTemplateCOF
 from spe.runtime.compiler.definitions.compileOpSpecs import CompileOpSpecs
 
 
+@Operator.requiresInput(StringType())
 class ParseJSON(Operator):
     """
     Inputs: 1
@@ -20,7 +21,7 @@ class ParseJSON(Operator):
     def __init__(self, opID: int):
         super(ParseJSON, self).__init__(opID, 1, 1)
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
         pass
 
     def getData(self) -> dict:

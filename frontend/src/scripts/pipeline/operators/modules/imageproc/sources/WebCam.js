@@ -6,7 +6,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _WebCam extends Definition {
     constructor(pathIdentifier){
-        super("WebCam", "Webcam", pathIdentifier, true);
+        super("WebCam", "Webcam", pathIdentifier,
+            "Streams recorded frames captured by a connected camera device.", true);
     }
 
     build(operator) {

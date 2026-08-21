@@ -6,7 +6,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _ImgBlend extends Definition {
     constructor(pathIdentifier){
-        super("ImgBlend", "Img Blend", pathIdentifier);
+        super("ImgBlend", "Img Blend", pathIdentifier,
+            "Blends two input images together.");
     }
 
     build(operator) {

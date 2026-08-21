@@ -1,5 +1,5 @@
-import json
 import time
+from typing import Dict
 
 import cv2
 
@@ -16,7 +16,7 @@ class WebCam(Source):
         self.frameRate = 0
         self.device = 0
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
         self.frameRate = int(data["frameRate"])
 
         if data["device"] != self.device:

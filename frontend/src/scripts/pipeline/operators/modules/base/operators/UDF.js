@@ -7,7 +7,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _UDF extends Definition {
     constructor(pathIdentifier){
-        super("UDF", "User Defined Function", pathIdentifier);
+        super("UDF", "User Defined Function", pathIdentifier,
+            "Transforms the input data based on a user-defined function.");
     }
 
     build(operator) {

@@ -6,7 +6,8 @@ import {anySocket} from "@/scripts/pipeline/operators/modules";
 
 export default class _ParseJSON extends Definition {
     constructor(pathIdentifier){
-        super("ParseJSON", "Parse JSON", pathIdentifier);
+        super("ParseJSON", "Parse JSON", pathIdentifier,
+            "Decodes the input data (String in JSON format) into a Python object.");
     }
 
     build(operator) {

@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import json
 from typing import Dict, Optional, TYPE_CHECKING, Set
 
 from spe.pipeline.operators.base.operators.windows.windowOperator import WindowOperator
@@ -53,9 +55,9 @@ class PipelineCompiler(RuntimeService):
     def endCompileMode(self):
         self.reset()
 
-    def calculateTargetSuggestions(self, strategyData: Dict, compileConfigs: Dict[str, Dict]) -> Optional[Dict]:
+    def calculateTargetSuggestions(self, strategyData: Dict, compileConfigs: Dict[str, Dict]) -> CompilerRes:
         if self.pipeline is None or self.isPipelineRunning():
-            return None
+            return CompilerRes.error("Pipeline missing or running!")
 
         if not self._applyConfigurations(compileConfigs, True, True, True):
             return self._collectSuggestionResult(canceled=True)
@@ -80,7 +82,7 @@ class PipelineCompiler(RuntimeService):
 
         self._calculateCluster()
 
-        return self._collectSuggestionResult(placementRes.statusMsg)
+        return self._collectSuggestionResult(placementRes.result)
 
     def _applyConfigurations(self, compileConfigs: Dict[str, Dict], allowEmptyTargets: bool,
                              allowEmptyClusters: bool, resetAuto: bool) -> bool:
@@ -126,7 +128,7 @@ class PipelineCompiler(RuntimeService):
 
         return res
 
-    def _collectSuggestionResult(self, statusMsg: Optional[str] = None, canceled: bool = False) -> Optional[Dict]:
+    def _collectSuggestionResult(self, statusMsg: Optional[str] = None, canceled: bool = False) -> CompilerRes:
         errorMsg: Set[str] = set()
         res = []
 
@@ -180,17 +182,17 @@ class PipelineCompiler(RuntimeService):
                             "exStatsAvail": exStats.getStats() is not None}
                         })
 
-        hasError = len(errorMsg) > 0
+        if len(errorMsg) > 0:
+            return CompilerRes.error("\n".join(errorMsg))
 
-        return {"error": "\n".join(errorMsg) if hasError else None, "statusMsg": statusMsg,
-                "opData": res, "canCompile": not hasError}
+        return CompilerRes.okWithRes(json.dumps({"statusMsg": statusMsg, "opData": res, "canCompile": True}, default=vars))
 
     def compilePipeline(self, opCompileConfigs: Dict[str, Dict], compileConfig: Dict) -> CompilerRes:
         if self.pipeline is None or self.isPipelineRunning():
-            return CompilerRes("Invalid pipeline state!")
+            return CompilerRes.error("Invalid pipeline state!")
 
         if not self._applyConfigurations(opCompileConfigs, False, False, False):
-            return CompilerRes("Couldn't apply operator target configurations!")
+            return CompilerRes.error("Couldn't apply operator target configurations!")
 
         # Reset all previous errors
 
@@ -198,6 +200,7 @@ class PipelineCompiler(RuntimeService):
             op.clearExecutionError()
 
         codeGen = CodeGenerator(self.compileDB, self.pipeline, compileConfig["settings"])
+
         return codeGen.generate()
 
     def _initializeDB(self):

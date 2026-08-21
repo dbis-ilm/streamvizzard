@@ -3,13 +3,14 @@ import json
 import logging
 import threading
 import time
+from enum import Enum
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from queue import Queue
-from typing import Dict, Optional, TYPE_CHECKING
+from typing import Dict, Optional
 
-from websockets.sync.server import serve, ServerConnection, WebSocketServer as WebSocketServerImpl
+from websockets.sync.server import serve, ServerConnection, Server
 
-from network.commands.commands import Command
+from network.commands.commands import Command, CommandRes
 from network.commands.debuggerCmds import ChangeDebuggerStateCMD, RequestDebuggerStepCMD, ExecuteProvQueryCMD, \
     ChangeDebuggerConfigCMD, DebuggerStepChange
 from network.commands.monitorCmds import ChangeMonitorConfigCMD
@@ -18,9 +19,9 @@ from network.commands.pipelineCmds import StartPipelineCMD, StopPipelineCMD, Upd
 from network.commands.compileCmds import CompileModeStartCMD, CompileAnalyzeCMD, CompileModeEndCMD, CompilePipelineCMD
 from network.commands.storageCmds import RetrieveStoredPipelines, RequestStoredPipeline, DeleteStoredPipeline, \
     StorePipeline, RetrieveStoredOperators, DeleteStoredOperator, StoreOperator
-
-if TYPE_CHECKING:
-    from streamVizzard import StreamVizzard
+from network.socketTuple import SocketTuple
+from spe.common.timer import Timer
+from streamVizzard import StreamVizzard
 
 
 class ServerManager:
@@ -48,7 +49,7 @@ class ServerManager:
         if self.apiServer is not None:
             self.apiServer.shutdown()
 
-    def sendSocketData(self, data):
+    def sendSocketData(self, data: SocketTuple | bytes):
         if self.socketServer is None:
             return
 
@@ -69,50 +70,66 @@ class ServerManager:
     def onSocketClosed(self):
         self.manager.stopPipeline()
 
-    # TODO: Restrict api/socket access to commands + return StatusCode on api!
-    def executeCommand(self, name: str, data) -> Optional[str]:
+    def executeCommand(self, name: str, data: Dict, networkMode: NetworkMode) -> Optional[CommandRes]:
         cmd = self._commandLookup.get(name, None)
 
         if cmd is not None:
+            if cmd.networkMode != networkMode:
+                return CommandRes.error("Operation not allowed!")
+
             return cmd.handleCommand(self.manager.runtimeManager, data)
 
-        return None
+        return None  # Cmd not found
 
     @staticmethod
     def _setupCommands() -> Dict[str, Command]:
-        commandLookup:  Dict[str, Command] = dict()
+        commandLookup: Dict[str, Command] = dict()
 
         def _addCmd(cmd: Command):
             commandLookup[cmd.name] = cmd
 
-        _addCmd(StartPipelineCMD())
-        _addCmd(StopPipelineCMD())
-        _addCmd(UpdatePipelineCMD())
-        _addCmd(ChangeAdvisorConfigCMD())
-        _addCmd(SimulateCMD())
+        # Pipeline
+        _addCmd(StartPipelineCMD(NetworkMode.API))
+        _addCmd(StopPipelineCMD(NetworkMode.API))
+        _addCmd(UpdatePipelineCMD(NetworkMode.SOCKET))  # Includes UI updates
 
-        _addCmd(ChangeMonitorConfigCMD())
+        # Advisor
+        _addCmd(ChangeAdvisorConfigCMD(NetworkMode.API))
 
-        _addCmd(CompileAnalyzeCMD())
-        _addCmd(CompileModeStartCMD())
-        _addCmd(CompileModeEndCMD())
-        _addCmd(CompilePipelineCMD())
+        # Simulator
+        _addCmd(SimulateCMD(NetworkMode.API))
 
-        _addCmd(RetrieveStoredPipelines())
-        _addCmd(RequestStoredPipeline())
-        _addCmd(DeleteStoredPipeline())
-        _addCmd(StorePipeline())
-        _addCmd(RetrieveStoredOperators())
-        _addCmd(DeleteStoredOperator())
-        _addCmd(StoreOperator())
+        # Monitor
+        _addCmd(ChangeMonitorConfigCMD(NetworkMode.API))
 
-        _addCmd(ChangeDebuggerStateCMD())
-        _addCmd(ChangeDebuggerConfigCMD())
-        _addCmd(RequestDebuggerStepCMD())
-        _addCmd(ExecuteProvQueryCMD())
-        _addCmd(DebuggerStepChange())
+        # Compiler
+        _addCmd(CompileAnalyzeCMD(NetworkMode.API))
+        _addCmd(CompileModeStartCMD(NetworkMode.API))
+        _addCmd(CompileModeEndCMD(NetworkMode.API))
+        _addCmd(CompilePipelineCMD(NetworkMode.API))
+
+        # Storage
+        _addCmd(RetrieveStoredPipelines(NetworkMode.API))
+        _addCmd(RequestStoredPipeline(NetworkMode.API))
+        _addCmd(DeleteStoredPipeline(NetworkMode.API))
+        _addCmd(StorePipeline(NetworkMode.API))
+        _addCmd(RetrieveStoredOperators(NetworkMode.API))
+        _addCmd(DeleteStoredOperator(NetworkMode.API))
+        _addCmd(StoreOperator(NetworkMode.API))
+
+        # Debugger
+        _addCmd(ChangeDebuggerStateCMD(NetworkMode.API))
+        _addCmd(ChangeDebuggerConfigCMD(NetworkMode.API))
+        _addCmd(RequestDebuggerStepCMD(NetworkMode.API))
+        _addCmd(ExecuteProvQueryCMD(NetworkMode.API))
+        _addCmd(DebuggerStepChange(NetworkMode.SOCKET))
 
         return commandLookup
+
+
+class NetworkMode(Enum):
+    SOCKET = "Socket"
+    API = "API"
 
 
 class WebSocketServer:
@@ -128,9 +145,9 @@ class WebSocketServer:
         logging.getLogger("websockets").addHandler(logging.NullHandler())
         logging.getLogger("websockets").propagate = False
 
-        self.sendQueue = Queue(0)
+        self.sendQueue: Queue[SocketTuple | bytes] = Queue(0)
 
-        self._server: Optional[WebSocketServerImpl] = None
+        self._server: Optional[Server] = None
         self._waitEvent = threading.Event()
         self._sendThread = threading.Thread(target=self._sendLoop, daemon=True)
 
@@ -146,7 +163,7 @@ class WebSocketServer:
         self.running = True
         self._sendThread.start()
 
-        with serve(self._handleConnection, "0.0.0.0", self.port) as server:
+        with serve(self._handleConnection, "0.0.0.0", self.port, compression=None) as server:
             self._server = server
 
             server.serve_forever()
@@ -181,19 +198,26 @@ class WebSocketServer:
 
                 cmd = jdata["cmd"]
 
-                resp = self.manager.executeCommand(cmd, jdata)
+                resp = self.manager.executeCommand(cmd, jdata, NetworkMode.SOCKET)
 
-                if resp is not None:
-                    self.sendData(resp)
+                if resp is not None and resp.resData is not None:
+                    self.sendData(resp.resData.encode())  # Potential errors are skipped here (no cmd identifier)
             except Exception:
                 ...
 
     def _sendLoop(self):
-        from network.socketTuple import SocketTuple
+        MAX_WAIT_DUR = StreamVizzard.getConfig().NETWORK_MAX_BATCH_DELAY
+        MAX_BATCH_SIZE = StreamVizzard.getConfig().NETWORK_MAX_BATCH_SIZE
 
         while self.running:
             if self.client:
-                while self.sendQueue.qsize() > 0:  # TODO: COULD BE PACKED INTO ONE MESSAGE
+                start = Timer.currentRealTime()
+
+                dataBatch = []  # All individual messages to be sent in this loop
+                batchSize = 0
+
+                # Ensure, we don't run into an infinity loop if elm.getData calls take to long (and new messages arrive)
+                while self.sendQueue.qsize() > 0 and Timer.currentRealTime() - start < MAX_WAIT_DUR and batchSize < MAX_BATCH_SIZE:
                     elm = self.sendQueue.get(False)
 
                     data = elm
@@ -203,14 +227,23 @@ class WebSocketServer:
 
                         data = elm.getData()
 
-                    if data is not None:
-                        self.client.send(data)
+                    if data is not None:  # None data (potentially retrieved from SocketTuple:getData) is dropped
+                        batchSize += len(data)
+                        dataBatch.append(data)
+
+                if len(dataBatch) > 0:
+                    dataToSend = b"[" + b",".join(dataBatch) + b"]"  # Res data is an JSON array of individual JSON messages
+
+                    self.client.send(dataToSend, text=True)
+
+                if self.sendQueue.qsize() == 0:
+                    self._waitEvent.clear()  # Clear event if no more data
 
                 self._waitEvent.wait()
 
             time.sleep(0.01)
 
-    def sendData(self, data):
+    def sendData(self, data: SocketTuple | bytes):
         if self.client:
             self.sendQueue.put(data)
 
@@ -242,36 +275,52 @@ class APIServer:
     class ServerHandler(BaseHTTPRequestHandler):
         apiServer: APIServer
 
-        def log_message(self, f: str,  *args):
+        def log_message(self, f: str, *args):
             pass  # Remove logging of http server
 
         def do_GET(self):
-            self._sendResponse()
+            self._sendResponse(405)  # Not allowed
 
         def do_OPTIONS(self):
             self.send_response(200, "ok")
             self.send_header('Access-Control-Allow-Credentials', 'true')
             self.send_header('Access-Control-Allow-Origin', '*')
             self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-            self.send_header("Access-Control-Allow-Headers", "X-Requested-With, Content-type, Access-Control-Allow-Origin")
+            self.send_header("Access-Control-Allow-Headers",
+                             "X-Requested-With, Content-type, Access-Control-Allow-Origin")
             self.end_headers()
 
         def do_POST(self):
-            content_length = int(self.headers['Content-Length'])
+            cl = self.headers['Content-Length']
 
-            data = None
+            data = {}
 
-            if content_length > 0:
-                data = json.loads(self.rfile.read(content_length))
+            if cl is not None:
+                contentLength = int(cl)
+                if contentLength > 0:
+                    data = json.loads(self.rfile.read(contentLength))
 
             commandName = self.path.removeprefix("/")
 
-            resp = self.apiServer.manager.executeCommand(commandName, data)
+            resp = self.apiServer.manager.executeCommand(commandName, data, NetworkMode.API)
 
-            self._sendResponse(resp)
+            content = None
 
-        def _sendResponse(self, content: Optional[str] = None):
-            self.send_response(200)
+            if resp is None:
+                statusCode = 404
+            elif resp.hasError():
+                statusCode = 400
+                content = resp.errorMsg
+            elif resp.resData is None:
+                statusCode = 204  # No content
+            else:
+                statusCode = 200
+                content = resp.resData
+
+            self._sendResponse(statusCode, content)
+
+        def _sendResponse(self, statusCode: int, content: Optional[str] = None):
+            self.send_response(statusCode)
             self.send_header('Access-Control-Allow-Origin', '*')
             self.send_header('Content-type', 'application/json')
             self.end_headers()

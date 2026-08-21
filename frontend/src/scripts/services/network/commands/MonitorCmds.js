@@ -1,6 +1,6 @@
 import {Command} from "@/scripts/services/network/commands/Command";
 import {onConnectionDataUpdate} from "@/scripts/features/monitor/ConnectionMonitor";
-import {onOperatorDataUpdate, onOperatorHeatmapUpdate, onOperatorMessageBrokerUpdate} from "@/scripts/features/monitor/OperatorMonitor";
+import {onOperatorDataUpdate, onOperatorMessageBrokerUpdate} from "@/scripts/features/monitor/OperatorMonitor";
 import {SvInstance} from "@/scripts/StreamVizzard";
 
 class OpMonitorDataCMD extends Command {
@@ -53,24 +53,9 @@ class OpErrorDataCMD extends Command {
     }
 }
 
-class HeatmapDataCMD extends Command {
-    constructor() {
-        super("heatmap");
-    }
-
-    handleCommand(data) {
-        for(const op of data["ops"]) {
-            onOperatorHeatmapUpdate(op);
-        }
-
-        SvInstance.monitor.heatmapData = data;
-    }
-}
-
 export function registerMonitorCMDs(service) {
     service.registerCommand(new OpMonitorDataCMD());
     service.registerCommand(new ConMonitorDataCMD());
     service.registerCommand(new OpMsgBrokerDataCMD());
     service.registerCommand(new OpErrorDataCMD());
-    service.registerCommand(new HeatmapDataCMD());
 }

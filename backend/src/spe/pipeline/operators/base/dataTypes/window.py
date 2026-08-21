@@ -1,8 +1,11 @@
-from typing import List, Iterator
+from __future__ import annotations
+from typing import List, Iterator, TYPE_CHECKING
 
 from pympler import asizeof
 
-from spe.common.tuple import Tuple
+
+if TYPE_CHECKING:
+    from spe.common.tuple import Tuple
 
 
 class Window:
@@ -28,9 +31,6 @@ class Window:
 
     def toDataArray(self) -> list:
         return [t.data[0] for t in self._tuples]
-
-    def isTypeOf(self, t):
-        return len(self._tuples) > 0 and isinstance(self._tuples[0].data[0], t)
 
     def getDataSize(self) -> bytes:
         return asizeof.asizeof(self.toDataArray())

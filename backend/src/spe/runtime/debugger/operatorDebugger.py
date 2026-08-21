@@ -1,5 +1,4 @@
 import asyncio
-import json
 from typing import Callable, List, Dict, Optional
 
 from spe.pipeline.operators.operator import Operator
@@ -118,7 +117,7 @@ class OperatorDebugger:
 
     # -------------------------- BREAKPOINTS -------------------------
 
-    def registerBreakpoints(self, bp: json):
+    def registerBreakpoints(self, bp: Dict):
         self._breakPoints.clear()
 
         for d in bp:

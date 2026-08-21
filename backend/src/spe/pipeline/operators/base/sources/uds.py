@@ -1,4 +1,4 @@
-import json
+from typing import Dict
 
 from spe.pipeline.operators.source import Source
 from spe.common.udfCompiler import instantiateUserDefinedClass
@@ -11,7 +11,7 @@ class UDS(Source):
         self.code = None
         self._instance = None
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
         socksOut = data["outputs"]
 
         self._configureSockets(0, socksOut)

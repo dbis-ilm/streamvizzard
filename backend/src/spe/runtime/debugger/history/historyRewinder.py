@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import json
 import threading
 from typing import TYPE_CHECKING, Optional
 
+from spe.common.serialization.jsonSerialization import fastSerializeToJSONBytes
 from streamVizzard import StreamVizzard
 from spe.common.preciseEvent import PreciseEvent
 
@@ -41,7 +41,7 @@ class HistoryRewinder:
         self._rewindThread = threading.Thread(target=self._executeRewind)
         self._rewindThread.start()
 
-        self._debugger.getServerManager().sendSocketData(json.dumps({"cmd": "debRewind", "status": self.getStatus()}))
+        self._debugger.getServerManager().sendSocketData(fastSerializeToJSONBytes({"cmd": "debRewind", "status": self.getStatus()}))
 
     def reset(self):
         if not self.isRunning():
@@ -60,7 +60,7 @@ class HistoryRewinder:
         self._rewindWaitEvent = None
 
         if self._debugger.isEnabled():
-            self._debugger.getServerManager().sendSocketData(json.dumps({"cmd": "debRewind", "status": self.getStatus()}))
+            self._debugger.getServerManager().sendSocketData(fastSerializeToJSONBytes({"cmd": "debRewind", "status": self.getStatus()}))
 
     def _executeRewind(self):
         # First locks history until rewind is done or canceled

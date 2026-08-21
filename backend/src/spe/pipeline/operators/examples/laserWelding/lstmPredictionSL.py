@@ -1,20 +1,23 @@
 import asyncio
 import json
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 import numpy as np
 from tensorflow import keras
 
+from spe.common.dataType import ArrayType
 from spe.runtime.compiler.definitions.compileDefinitions import CompileFramework, CompileLanguage, CompileComputeMode, \
     CompileParallelism
 from spe.runtime.compiler.definitions.compileOpFunction import CodeTemplateCOF
 from spe.runtime.compiler.definitions.compileOpSpecs import CompileOpSpecs
 from spe.common.tuple import Tuple
 from spe.pipeline.operators.operator import Operator
+from utils.utils import tryParseInt
 
 
 # Stateless implementation based on input time-series
 
+@Operator.requiresInput(ArrayType())
 class LstmPredictionSL(Operator):
     def __init__(self, opID: int):
         super(LstmPredictionSL, self).__init__(opID, 1, 1)
@@ -24,9 +27,14 @@ class LstmPredictionSL(Operator):
 
         self._currentModel = None
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
+        oldPath = self.modelPath
+
         self.modelPath = data["modelPath"]
-        self.predictSteps = data["predictSteps"]
+        self.predictSteps = tryParseInt(data["predictSteps"])
+
+        if self.isRunning() and self.modelPath != oldPath:  # Updated
+            self._ensureModel()
 
     def getData(self) -> dict:
         return {"modelPath": self.modelPath, "predictSteps": self.predictSteps}
@@ -34,7 +42,15 @@ class LstmPredictionSL(Operator):
     def onRuntimeCreate(self, eventLoop: asyncio.AbstractEventLoop):
         super(LstmPredictionSL, self).onRuntimeCreate(eventLoop)
 
-        # Try load the model
+        self._ensureModel()
+
+    def _ensureModel(self):
+        self._currentModel = None
+
+        if self.modelPath is None or len(self.modelPath) == 0:
+            return
+
+        # try load model
 
         try:
             regression_model = keras.models.load_model(self.modelPath, compile=False)
@@ -42,6 +58,7 @@ class LstmPredictionSL(Operator):
                 keras.backend.mean(keras.backend.square(y_pred - y_true))))
             encoderModel, decoderModel = self._get_inference_model(regression_model)
             self._currentModel = (encoderModel, decoderModel)
+            self.clearExecutionError()
         except Exception:
             self.onExecutionError()
 

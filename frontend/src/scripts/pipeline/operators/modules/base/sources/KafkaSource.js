@@ -8,7 +8,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _KafkaSource extends Definition {
     constructor(pathIdentifier){
-        super("KafkaSource", "Kafka Source", pathIdentifier);
+        super("KafkaSource", "Kafka Source", pathIdentifier,
+            "Subscribes to a Kafka broker to fetch data registered at a specific topic.");
     }
 
     build(operator) {

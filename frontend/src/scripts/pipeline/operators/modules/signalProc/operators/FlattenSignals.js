@@ -6,7 +6,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _FlattenSignals extends Definition {
     constructor(pathIdentifier){
-        super("FlattenSignals", "Flatten Signals", pathIdentifier);
+        super("FlattenSignals", "Flatten Signals", pathIdentifier,
+            "Merges an input list of signals into one combined signal.");
     }
 
     build(operator) {

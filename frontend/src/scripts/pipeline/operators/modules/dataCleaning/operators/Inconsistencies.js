@@ -7,7 +7,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _Inconsistencies extends Definition {
     constructor(pathIdentifier){
-        super("Inconsistencies", "Inconsistencies", pathIdentifier);
+        super("Inconsistencies", "Inconsistencies", pathIdentifier,
+            "Detects inconsistencies in the input data (list of numerical elements) and potentially resolves them.");
     }
 
     build(operator) {

@@ -6,6 +6,9 @@ import ImageDT from "@/components/features/monitor/displays/ImageDT.vue";
 import ScatterplotDT from "@/components/features/monitor/displays/ScatterplotDT.vue";
 import BoolDS from "@/components/features/monitor/sidebar/settings/BoolDS.vue";
 import RangeDS from "@/components/features/monitor/sidebar/settings/RangeDS.vue";
+import HeatmapDT from "@/components/features/monitor/displays/HeatmapDT.vue";
+import NumberDS from "@/components/features/monitor/sidebar/settings/NumberDS.vue";
+import TableDT from "@/components/features/monitor/displays/TableDT.vue";
 
 export class MonitorDataType {
     constructor(name, displayName) {
@@ -38,11 +41,17 @@ export class MonitorDataType {
 }
 
 export class MonitorDisplayMode {
-    constructor(modeID, name, template, props = {}) {
-        this.name = name;
+    /** @param {Number} modeID
+     * @param {String} displayName
+     * @param {MonitorDisplayTemplate} template
+     * @param {Object} defaults
+     * @param {() => TemplateSetting[]} settingsRetriever Additional data-type specific settings to set by the user. */
+    constructor(modeID, displayName, template, defaults = {}, settingsRetriever = () => []) {
+        this.name = displayName;
         this.modeID = modeID;
         this.template = template;
-        this.props = props;
+        this.defaults = defaults;
+        this.settingsRetriever = settingsRetriever;
     }
 
     getSafeSettings(userSettings) {
@@ -52,7 +61,7 @@ export class MonitorDisplayMode {
         let set = valueOr(Object.assign({}, userSettings), {});  // Copy props
 
         // First take template-defined props as baseline (some are not available as setting options)
-        for (let key in this.props) set[key] = this.props[key];
+        for (let key in this.defaults) set[key] = this.defaults[key];
 
         // Now override props based on setting options and userProps
         for(let op of this.getSettingsOptions(userSettings)) set[op.key] = op.value;
@@ -60,18 +69,51 @@ export class MonitorDisplayMode {
         return set;
     }
 
+    /** @param {Object} userProps
+     * @returns {TemplateSetting[]} */
     getSettingsOptions(userProps) {
-        return this.template.getSettings(valueOr(userProps, {}), this.props);
+        let safeUserProps = valueOr(userProps, {});
+        let settings = this.template.getSettings(safeUserProps, this.defaults);
+
+        for(let add of this.settingsRetriever()) {
+            add.value = safeVal(safeUserProps[add.key], add.def);
+            settings.push(add);
+        }
+
+        return settings;
+    }
+}
+
+export class TemplateSetting {
+    /** @param {String} key
+     * @param {String} name
+     * @param {Object} value
+     * @param {Object} def
+     * @param {Object} template
+     * @param {String} desc
+     * @param {Object|null} data **/
+    constructor(key, name, value, def, template, desc, data = null) {
+        this.key = key;
+        this.name = name;
+        this.value = value;
+        this.def = def;
+        this.template = template;
+        this.desc = desc;
+        this.data = data;
     }
 }
 
 class MonitorDisplayTemplate {
+    /** @param {Object}  component
+     * @param {(props: Object, propsDef: Object) => TemplateSetting[]} settingsRetriever
+     * @param {Boolean} syncProps */
     constructor(component, settingsRetriever, syncProps=false) {
         this.component = component;
         this._settingsRetriever = settingsRetriever;
         this.syncProps = syncProps; // True, if the user props should be sent to the backend (for preparing visualized data)
     }
 
+    /** @returns {TemplateSetting[]} */
     getSettings(userProps, defaultProps) {
         return this._settingsRetriever(userProps, defaultProps);
     }
@@ -81,7 +123,7 @@ export const DT_Literal = new MonitorDisplayTemplate(LiteralDT, (props, propsDef
     let expDef = safeVal(propsDef.exp, "$VAL");
     let exp = safeVal(props.exp, expDef);
 
-    let maxLengthDef = safeVal(propsDef.maxLength, null);
+    let maxLengthDef = safeVal(propsDef.maxLength, "1000");
     let maxLength = safeVal(props.maxLength, maxLengthDef);
 
     let styleDef = safeVal(propsDef.style, null);
@@ -90,12 +132,14 @@ export const DT_Literal = new MonitorDisplayTemplate(LiteralDT, (props, propsDef
     let alignDef = safeVal(propsDef.align, "Center");
     let align = safeVal(props.align, alignDef);
 
-    return [{"key": "exp", "name": "Expression", "value": exp, "desc": "How to display the value. $VAL signals the value to display. " +
-            "JS code can be used but needs to return a string.\nExample: \"Value: \" + $VAL.toUpperCase()", "default": expDef, "template": StringDS},
-            {"key": "maxLength", "name": "Max Length", "value": maxLength, "desc": "How many characters the display string will have at most", "default": maxLengthDef, "template": StringDS},
-            {"key": "style", "name": "Style", "value": style, "desc": "Css style of the display text. Separate multiple values with ';'\nExample: font-weight:bold; font-size:24px;", "default": styleDef, "template": StringDS},
-            {"key": "align", "name": "Alignment", "value": align, "data": ["Center", "Left", "Right"], "desc": "Alignment of the display text", "default": alignDef, "template": SelectDS}]}
-);
+    return [new TemplateSetting("exp", "Expression", exp, expDef, StringDS, "How to display the value. $VAL signals the value to display. JS code can be used but needs to return a string.\nExample: \"Value: \" + $VAL.toUpperCase()"),
+            new TemplateSetting("maxLength", "Max Length", maxLength, maxLengthDef, StringDS, "How many characters the display string will have at most"),
+            new TemplateSetting("style", "Style", style, styleDef, StringDS, "Css style of the display text. Separate multiple values with ';'\nExample: font-weight:bold; font-size:24px;"),
+            new TemplateSetting("align", "Alignment", align, alignDef, SelectDS, "Alignment of the display text", ["Center", "Left", "Right"])
+    ]
+});
+
+export const DT_Table = new MonitorDisplayTemplate(TableDT, () => { return []; }, true);
 
 export const DT_Image = new MonitorDisplayTemplate(ImageDT, () => { return []; }, true);
 
@@ -112,20 +156,46 @@ export const DT_Scatterplot = new MonitorDisplayTemplate(ScatterplotDT, (props, 
     let yTitleDef = safeVal(propsDef.ytitle, null);
     let yTitle = safeVal(props.ytitle, yTitleDef);
 
-    let xRangeDef = safeVal(propsDef.xrange, null);
+    let xRangeDef = safeVal(propsDef.xrange, [null, null]);
     let xRange = safeVal(props.xrange, xRangeDef);
 
-    let yRangeDef = safeVal(propsDef.yrange, null);
+    let yRangeDef = safeVal(propsDef.yrange, [null, null]);
     let yRange = safeVal(props.yrange, yRangeDef);
 
-    let maxBufferDef = safeVal(propsDef.maxBufferElements, null);
+    let maxBufferDef = safeVal(propsDef.maxBufferElements, 100);
     let maxBuffer = safeVal(props.maxBufferElements, maxBufferDef);
 
-    return [{"key": "xvisible", "name": "Show X Axis", "value": xVis, "desc": "Displays the x axis", "default": xVisDef, "template": BoolDS},
-        {"key": "yvisible", "name": "Show Y Axis", "value": yVis, "desc": "Displays the y axis", "default": yVisDef, "template": BoolDS},
-        {"key": "xtitle", "name": "X Title", "value": xTitle, "desc": "The title of the x axis", "default": xTitleDef, "template": StringDS},
-        {"key": "ytitle", "name": "Y Title", "value": yTitle, "desc": "The title of the y axis", "default": yTitleDef, "template": StringDS},
-        {"key": "xrange", "name": "X Range", "value": xRange, "desc": "The data range of the x axis", "default": xRangeDef, "template": RangeDS},
-        {"key": "yrange", "name": "Y Range", "value": yRange, "desc": "The data range of the y axis", "default": yRangeDef, "template": RangeDS},
-        {"key": "maxBufferElements", "name": "Max. Points", "value": maxBuffer, "desc": "How many data points to display at max per plot (sample otherwise)", "default": maxBufferDef, "template": StringDS}];
-});
+    return [new TemplateSetting("xvisible", "Show X Axis", xVis, xVisDef, BoolDS, "Displays the x axis"),
+            new TemplateSetting("yvisible", "Show Y Axis", yVis, yVisDef, BoolDS, "Displays the y axis"),
+            new TemplateSetting("xtitle", "X Title", xTitle, xTitleDef, StringDS, "The title of the x axis"),
+            new TemplateSetting("ytitle", "Y Title", yTitle, yTitleDef, StringDS, "The title of the y axis"),
+            new TemplateSetting("xrange", "X Range", xRange, xRangeDef, RangeDS, "The data range of the x axis. Either both sides or none can be set."),
+            new TemplateSetting("yrange", "Y Range", yRange, yRangeDef, RangeDS, "The data range of the y axis. Either both sides or none can be set."),
+            new TemplateSetting("maxBufferElements", "Max. Points", maxBuffer, maxBufferDef, NumberDS, "How many data points to display at max per plot (sampled otherwise)")
+    ];
+}, true);
+
+export const DT_Heatmap = new MonitorDisplayTemplate(HeatmapDT, (props, propsDef) => {
+    let xTitleDef = safeVal(propsDef.xtitle, null);
+    let xTitle = safeVal(props.xtitle, xTitleDef);
+
+    let yTitleDef = safeVal(propsDef.ytitle, null);
+    let yTitle = safeVal(props.ytitle, yTitleDef);
+
+    let zTitleDef = safeVal(propsDef.ztitle, null);
+    let zTitle = safeVal(props.ztitle, zTitleDef);
+
+    let yRangeDef = safeVal(propsDef.yrange, [null, null]);
+    let yRange = safeVal(props.yrange, yRangeDef);
+
+    let maxCellsDef = safeVal(propsDef.maxCells, 1000);
+    let maxCells = safeVal(props.maxCells, maxCellsDef);
+
+    return [
+        new TemplateSetting("xtitle", "X Title", xTitle, xTitleDef, StringDS, "The title of the x axis"),
+        new TemplateSetting("ytitle", "Y Title", yTitle, yTitleDef, StringDS, "The title of the y axis"),
+        new TemplateSetting("ztitle", "Z Title", zTitle, zTitleDef, StringDS, "The title of the z axis (color)"),
+        new TemplateSetting("yrange", "Y Range", yRange, yRangeDef, RangeDS, "The data range of the y axis. Either both sides or none can be set."),
+        new TemplateSetting("maxCells", "Max. Cells", maxCells, maxCellsDef, NumberDS, "How many data cells to display at max (sampled otherwise)")
+    ];
+}, true);

@@ -1,7 +1,7 @@
-import json
 from typing import List
 
 from network.server import ServerManager
+from spe.common.serialization.jsonSerialization import fastSerializeToJSONBytes
 from spe.pipeline.operators.operator import Operator
 from spe.runtime.advisor.advisorSuggestion import AdvisorSuggestion
 from spe.runtime.runtimeManager import RuntimeManager
@@ -27,7 +27,7 @@ class PipelineAdvisor(RuntimeService):
 
         data["sugs"] = suggestions if len(suggestions) > 0 else None
 
-        self.serverManager.sendSocketData(json.dumps(data))
+        self.serverManager.sendSocketData(fastSerializeToJSONBytes(data))
 
     def toggleAdvisor(self, enabled: bool):
         self._enabled = enabled

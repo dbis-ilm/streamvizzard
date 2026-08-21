@@ -1,31 +1,28 @@
 [tool.poetry]
 name = "streamvizzard_backend"
-version = "0.9.5"
+version = "0.9.9"
 description = "The backend of StreamVizzard"
 authors = ["Timo Räth <timo.raeth@tu-ilmenau.de>"]
 readme = "readme.md"
 
-
 [tool.poetry.dependencies]
 python = ">=3.11,<3.12"
-
 
 [tool.poetry.group.base.dependencies]
 websockets = "15.0.1"
 Pympler  = "1.1"
-astunparse = "1.6.3"
 requests = "2.32.4"
 wres = {"version" = "1.0.3", markers = "sys_platform == 'win32'"}
 dill = "0.4.0"
 kafka-python3 = "3.0.0"
 autopep8 = "2.3.2"
+orjson = "3.11.9"
 #provInspector = { git = "https://github.com/dbis-ilm/streamvizzard-provinspector.git" }
 
 [tool.poetry.group.imageProcessing.dependencies]
 opencv-python = "4.11.0.86"
 
 [tool.poetry.group.dataCleaning.dependencies]
-river = "0.22.0"
 pandas = "2.3.1"
 
 [tool.poetry.group.signalProcessing.dependencies]

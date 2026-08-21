@@ -1,37 +1,38 @@
 from __future__ import annotations
 
-import json
-import logging
-import traceback
-from typing import Optional, TYPE_CHECKING, Callable, Dict, Any
+from typing import Optional, TYPE_CHECKING, Callable, Dict
 
+from spe.common.dataType import DataType, NoneType
 from spe.common.udfCompiler import instantiateUserDefinedFunction
 from spe.pipeline.operators.operatorDB import getDisplayDataType
 from spe.runtime.monitor.dataInspect import DataInspect
+from spe.runtime.monitor.dataInspectType import DataInspectType
 from utils.utils import extractTracebackErrorMsg
 
 if TYPE_CHECKING:
-    from spe.pipeline.operators.module import MonitorDataType
+    from spe.runtime.monitor.dataDisplayType import DataDisplayType
     from spe.pipeline.operators.operator import Operator
 
 
 class OperatorMonitorData:
+    EMPTY_DATA = {}
+
     def __init__(self, operator: Operator):
         self._operator = operator
 
         self._data = None  # Current data to display
 
         self._displaySocket = 0
-        self._displayDataType: Optional[MonitorDataType] = None
+        self._displayDataType: Optional[DataDisplayType] = None
         self._displayMode = 0
         self._displayModeSettings = None
 
-        self._lastDataType: Optional[MonitorDataType] = None
+        self._lastDataType: Optional[DataDisplayType] = None
 
         self._transformerCode: Optional[str] = None
         self._transformer: Optional[Callable] = None
 
-        self._inspect: Optional[DataInspect] = None
+        self._inspector: Optional[DataInspect] = None
         self._inspectCmd: Optional[str] = None
 
         # If we should inform the receiver, that the display mode change request was acknowledged
@@ -40,23 +41,24 @@ class OperatorMonitorData:
         self._initialized = False
 
     def setData(self, data: tuple):
-        if data is None:
-            # Empty data tuple
-            data = tuple([None] * (self._displaySocket + 1))
+        self._data = None
 
-        if len(data) <= self._displaySocket or self._displaySocket < 0:  # No data or sockets to display
+        if data is None or len(data) <= self._displaySocket or self._displaySocket < 0:  # No data or sockets to display
             return
 
         # Only store the part of the data that should be sent
         # Data monitor transformations should be immutable and not change orig data!
         self._data = data[self._displaySocket]
 
+        if self._data is None:  # Explicitly indicate empty data
+            self._data = self.EMPTY_DATA
+
     def setConfig(self, data: Dict):
         newSocket = data.get("socket", self._displaySocket)
         newMode = data.get("mode", self._displayMode)
         newSettings = data.get("settings", self._displayModeSettings)
         newTransformer = data.get("transformer", self._transformerCode)
-        newInspect = data.get("inspect", self._inspect)  # TODO: Check UI to mak this persistent when starting new pipeline
+        newInspect = data.get("inspect", self._inspectCmd)
 
         # If socket changed, we need to await new data before we can display it
 
@@ -67,7 +69,7 @@ class OperatorMonitorData:
 
         if newSocket != self._displaySocket or newTransformer != self._transformerCode:
             self._transformer = None
-            self._inspect = None
+            self._inspector = None
             self._displayDataType = None
 
         self._displaySocket = newSocket
@@ -83,7 +85,7 @@ class OperatorMonitorData:
 
         self._ackUpdate = True
 
-    def getDisplayData(self):
+    def getDisplayData(self) -> Optional[Dict]:
         if self._data is None:
             return None
 
@@ -94,71 +96,78 @@ class OperatorMonitorData:
 
             self._ackUpdate = False
 
-        dataToDisplay = self._data  # Initial
+        dataToDisplay = self._data if self._data is not self.EMPTY_DATA else None  # Initial
 
         # Try to apply configured data transformation
 
         if self._transformer is not None:
             try:
+                # For performance reasons we do not clone the data here.
+                # The transformer function must ensure, that the original data object in memory is not modified!
                 dataToDisplay = self._transformer(self._data)
             except Exception:
                 res["error"] = extractTracebackErrorMsg(True, -2)
 
                 return res
 
-        # If the current data still belongs to the data type don't search for type again
-        if self._displayDataType is not None and self._displayDataType.isDataType(dataToDisplay):
-            dataToDisplay = self._displayDataType.transform(dataToDisplay)  # TODO: This should be recursive in case of many transform DT?
+        res["rawType"] = type(dataToDisplay).__name__
+
+        dt = DataType.retrieve(dataToDisplay, False)
+
+        if dt is None:  # Couldn't detect any data type
+            return res
+
+        # Keep current display type if we encounter None data (templates should handle it)
+
+        if isinstance(dt, NoneType) and self._displayDataType is not None:
+            dataType = self._displayDataType
+
+            if dataType is None:  # No previous type
+                return res
+
+        # Perform data handling for display
+
         else:
-            newType, dataToDisplay = self._findDisplayMode(dataToDisplay)
+            # Only search for type again if data does no longer belong to prev type
+            if self._displayDataType is None or not self._displayDataType.supportsType(dt):
+                newType = getDisplayDataType(dt)
 
-            if dataToDisplay is None:  # Not even an inspecting type found
-                return res
+                if newType is None:  # No type to display found
+                    return res
 
-            self._displayDataType = newType
-            self._inspect = newType.getInspectInstance() if newType.isInspectType() else None
+                self._displayDataType = newType
+                self._inspector = None
 
-        dataType = self._displayDataType
+            dataType = self._displayDataType
 
-        # Handle data inspect TODO: REWORK INSPECT (0 length lists drop out of ARRAY:IMG, ARRAY:NUMBER and dont recover)
-        # TODO: Limit amount of data send to client for inspection
+            # Handle data inspect
 
-        if self._displayDataType.isInspectType():
-            # Only send structure if it has changed, otherwise None
-            structure = self._inspect.getStructureIfChanged(dataToDisplay)
-            res["struct"] = json.loads(structure) if structure is not None else {}
+            if isinstance(dataType, DataInspectType):
+                if self._inspector is None:  # Initially instantiate
+                    self._inspector = dataType.getInspectInstance()
 
-            if self._inspectCmd is not None:
-                self._inspect.select(self._inspectCmd)  # TODO: Optimizable
+                res["dType"] = dataType.getName()  # Add preliminary type information of inspect type
 
-            # If no selection then just return structure info
-            if self._inspect.hasSelection():
-                if self._inspect.wasInspectChanged(True):
-                    newDisplayMode, dataToDisplay = self._findDisplayMode(self._inspect.getData(dataToDisplay))
+                inspectionRes = self._inspector.getInspectedData(self._inspectCmd, dataToDisplay)
+                res["struct"] = inspectionRes.resStruct  # Only send structure if it has changed
 
-                    if dataToDisplay is None:
-                        return res
+                if inspectionRes.resData is None:  # No inspection selected/found
+                    return res
+                elif inspectionRes.resType is None:  # Inspected selection has no available data type
+                    res["dType"] = None
 
-                    self._inspect.inspectDataType = newDisplayMode
-                else:
-                    dataToDisplay = self._inspect.getData(dataToDisplay)  # TODO: we might lose compiler DT here (same as above)
-            else:
-                return res
+                    return res
 
-            # Do not override self displayType since we are just inspecting data, not changing it
-            dataType = self._inspect.inspectDataType
+                dataType = inspectionRes.resType
+                dataToDisplay = inspectionRes.resData
 
-            if dataType is None:
-                return res
+            # Reset display mode if data type changed and (if this is not initial run or mode is not present in type)
 
-        # Reset display mode if data type changed and (if this is not initial run or mode is not present in type)
+            if dataType != self._lastDataType and (self._initialized or not dataType.hasDisplayMode(self._displayMode)):
+                self._displayMode = dataType.getDefaultDisplayModeID()
+                self._displayModeSettings = None  # Switching modes implies a reset of settings (for user)
 
-        # TODO: is this reliable?
-        if dataType != self._lastDataType and (self._initialized or not dataType.hasDisplayMode(self._displayMode)):
-            self._displayMode = dataType.getDefaultDisplayModeID()
-            self._displayModeSettings = None  # Switching modes implies a reset of settings (for user)
-
-        dataToDisplay = dataType.prepareForDisplayMode(self._displayMode, dataToDisplay, self._displayModeSettings)
+            dataToDisplay = dataType.prepareForDisplayMode(self._displayMode, dataToDisplay, self._displayModeSettings)
 
         res["data"] = dataToDisplay
         res["dType"] = dataType.getName()
@@ -168,27 +177,3 @@ class OperatorMonitorData:
         self._initialized = True
 
         return res
-
-    def _findDisplayMode(self, dataToDisplay: Any) -> tuple[Optional[MonitorDataType], Optional[Any]]:
-        # Transform data until we reach a non compiler type
-        while True:
-            # Infer data type for display
-            try:
-                newDataType = getDisplayDataType(dataToDisplay)
-            except Exception:
-                logging.log(logging.ERROR, traceback.format_exc())
-                newDataType = None
-
-            if newDataType is None:
-                return None, None
-            elif newDataType.isTransformType():
-                try:
-                    dataToDisplay = newDataType.transform(dataToDisplay)
-                except Exception:
-                    logging.log(logging.ERROR, traceback.format_exc())
-
-                continue
-
-            break
-
-        return newDataType, dataToDisplay

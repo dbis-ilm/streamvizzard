@@ -1,5 +1,4 @@
-import json
-from typing import Optional
+from typing import Optional, Dict
 
 from spe.pipeline.operators.operator import Operator
 from spe.common.tuple import Tuple
@@ -16,7 +15,7 @@ class Combine(Operator):
 
         self.ins = 0
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
         self.ins = data["ins"]
 
         # Adjust IN sockets if required

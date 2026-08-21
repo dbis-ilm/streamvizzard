@@ -20,6 +20,8 @@ export function onConnectionDataUpdate(entry) {
     if(con == null) return;
 
     con.monitor.updateData(entry.tp, entry.total, entry.time);
+
+    SvInstance.monitor.heatmap.signalNewStats();
 }
 
 // -------------------------------------------------------
@@ -31,13 +33,11 @@ let minDeltaTime = 0.5;
 
 export default class ConnectionMonitor {
     constructor() {
-        this.throughput = 0;
-        this.totalTuples = 0;
-        this.time = 0;
+        // Execution Stats
 
-        this.tpBuffer = [];
+        this.executionStats = new ConExecutionStats();
 
-        // Animation properties
+        // Animation Properties
 
         this.lastTick = 0;
         this.forward = false;
@@ -46,45 +46,20 @@ export default class ConnectionMonitor {
     }
 
     reset() {
-        this.totalTuples = 0;
-        this.tpBuffer = [];
-        this.throughput = 0;
-        this.time = 0;
         this.lastTick = 0;
+        this.executionStats.reset();
     }
 
     updateData(newTp, newTupleCount, time) {
-        if(this.totalTuples !== newTupleCount) {
+        if(this.executionStats.totalTuples !== newTupleCount) {
             this.lastTick = Date.now();
-            this.forward = this.totalTuples < newTupleCount;
+            this.forward = this.executionStats.totalTuples < newTupleCount;
         }
 
-        // If we are traversing the history backwards, we remove all expired vals from buffer
-        // Must rely on both, time and totalTuples, since time values are not reproducible (time of message __transfer__)
-
-        if(newTupleCount <= this.totalTuples || time <= this.time) {
-            for(let i = this.tpBuffer.length - 1; i >= 0; i--) {
-                let elm = this.tpBuffer[i];
-
-                if(elm["time"] >= time || elm["total"] >= newTupleCount) this.tpBuffer.pop();
-                else break;
-            }
-        }
-
-        let lastEntry = this.tpBuffer.length > 0 ? this.tpBuffer[this.tpBuffer.length - 1] : null;
-
-        // Avoid debugging zeroes and only add entry to buffer if enough time has passed since the last one
-        if(newTupleCount > 0 && (lastEntry === null || Math.abs(lastEntry.time - time) > minDeltaTime))
-            this.tpBuffer.push({"time": time, "tp": newTp, "total": newTupleCount});
-
-        if(this.tpBuffer.length > maxBufferSize) this.tpBuffer.shift();
-
-        this.time = time;
-        this.throughput = newTp;
-        this.totalTuples = newTupleCount;
+        this.executionStats.addNewEntry(newTp, newTupleCount, time);
 
         // We consider 120 tup/s as the max displayed speed value [remap]
-        this.animationSpeed = remap(this.throughput, 0, 120, monitorAnimationSpeed[0], monitorAnimationSpeed[1], true);
+        this.animationSpeed = remap(newTp, 0, 120, monitorAnimationSpeed[0], monitorAnimationSpeed[1], true);
     }
 
     calculateAnimationOffset() {
@@ -96,6 +71,67 @@ export default class ConnectionMonitor {
         this.animationOffset = current;
 
         return this.animationOffset;
+    }
+}
+
+class ConStatsEntry {
+    /** @param {Number} time Timestamp of capturing
+     * @param {Number} totalTuples Total tuples transmitted
+     * @param {Number} throughput Current connection throughput */
+    constructor(time, totalTuples, throughput) {
+        this.time = time;
+        this.totalTuples = totalTuples;
+        this.throughput = throughput;
+    }
+}
+
+class ConExecutionStats {
+    constructor() {
+        // Current state in time
+        this.time = 0;
+        this.totalTuples = 0;
+
+        /** @type {ConStatsEntry[]} **/
+        this.entries = [];
+    }
+
+    get currentThroughput() {
+        let lastEntry = this.entries.at(-1);
+
+        return lastEntry != null ? lastEntry.throughput : 0;
+    }
+
+    addNewEntry(newTp, newTupleCount, time) {
+        // If we are traversing the history backwards, we remove all expired vals from buffer
+        // Must rely on both, time and totalTuples, since time values are not reproducible (time of message __transfer__)
+
+        if(newTupleCount <= this.totalTuples || time <= this.time) {
+            for(let i = this.entries.length - 1; i >= 0; i--) {
+                let elm = this.entries[i];
+
+                if(elm.time >= time || elm.totalTuples >= newTupleCount) this.entries.pop();
+                else break;
+            }
+        }
+
+        let lastEntry = this.entries.length > 0 ? this.entries[this.entries.length - 1] : null;
+
+        // Avoid debugging zeroes and only add entry to buffer if enough time has passed since the last one
+        if(newTupleCount > 0 && (lastEntry === null || Math.abs(lastEntry.time - time) > minDeltaTime)) {
+            this.entries.push(new ConStatsEntry(time, newTupleCount, newTp));
+        }
+
+        if(this.entries.length > maxBufferSize) this.entries.shift();
+
+        this.time = time;
+        this.totalTuples = newTupleCount;
+    }
+
+    reset() {
+        this.time = 0;
+        this.totalTuples = 0;
+
+        this.entries = [];
     }
 }
 

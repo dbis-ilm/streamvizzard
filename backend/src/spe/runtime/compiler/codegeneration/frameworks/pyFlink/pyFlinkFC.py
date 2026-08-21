@@ -104,7 +104,7 @@ class PyFlinkFC(FrameworkCompiler):
         # Generate operator code, joins and config
 
         if not self._generateOperatorCode():
-            return CompilerRes("Failed to generate PyFlink code!")
+            return CompilerRes.error("Failed to generate PyFlink code!")
 
         # Sort code and assigns to have a valid order
 
@@ -168,7 +168,7 @@ class PyFlinkFC(FrameworkCompiler):
         except Exception:
             logging.log(logging.ERROR, traceback.format_exc())
 
-            return CompilerRes("Failed to save pipeline file!")
+            return CompilerRes.error("Failed to save pipeline file!")
 
         # Print dependency instructions
 
@@ -193,7 +193,7 @@ class PyFlinkFC(FrameworkCompiler):
         except Exception:
             logging.log(logging.ERROR, traceback.format_exc())
 
-            return CompilerRes("Failed to save dependency file!")
+            return CompilerRes.error("Failed to save dependency file!")
 
         return CompilerRes.ok()
 
@@ -748,9 +748,9 @@ class PyFlinkFC(FrameworkCompiler):
 
             if customTypeExtract is not None:
                 if not self._handleCustomClassExtracts(customTypeExtract):
-                    return CompilerRes(f"Couldn't extract custom class {customTypeExtract.moduleName} due to internal SV references and no override available!")
+                    return CompilerRes.error(f"Couldn't extract custom class {customTypeExtract.moduleName} due to internal SV references and no override available!")
             else:
-                return CompilerRes(f"Couldn't extract custom dataType {typeName}!")
+                return CompilerRes.error(f"Couldn't extract custom dataType {typeName}!")
 
             # Generate custom serialization instructions
 
@@ -816,23 +816,6 @@ class PyFlinkFC(FrameworkCompiler):
 
         if function.name not in self._helperFuncs:
             self._helperFuncs[function.name] = function
-
-    @staticmethod
-    def _getUniqueImports(importList: List[str]) -> List[str]:
-        imports = "\n".join([imp.strip() for imp in importList])
-
-        # Remove duplicates
-
-        lines = imports.strip().split("\n")
-
-        uniqueImports: Set[str] = set()
-
-        for line in lines:
-            uniqueImports.add(line.strip())
-
-        sortedList = sorted(list(uniqueImports), key=lambda x: len(x))
-
-        return sortedList
 
     class DSMapping:
         def __init__(self, opID: int, dsName: str):

@@ -49,16 +49,17 @@ class OperatorAdvisor:
             suggestions = []
 
             for strategy in self._strategies:
+
                 if strategy.mode != mode or not strategy.shouldHandle(tupleIn):
                     continue
 
                 strategy.registerTuple(tupleIn)
 
                 if advise:
-                    suggestion = strategy.makeSuggestion(tupleIn)
+                    newSuggestions = strategy.makeSuggestion(tupleIn)
 
-                    if suggestion is not None:
-                        suggestions.append(suggestion)
+                    if newSuggestions is not None:
+                        suggestions.extend(newSuggestions)
 
             if advise:
                 # Send suggestion update - also send zero suggestions in case prev got fixed

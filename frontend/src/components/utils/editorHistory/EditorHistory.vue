@@ -7,7 +7,6 @@
 import {EVENTS, INTERACTION, registerEvent, unregisterEvent} from "@/scripts/tools/EventHandler";
 import {
   AddOperatorAction,
-  DragOperatorCA,
   OperatorParamCA,
   OperatorNameCA,
   RemoveOperatorAction, SocketNameCA, OperatorResizeCA, OperatorChangeAction
@@ -22,6 +21,7 @@ import {
   GroupMoveAction,
   GroupNameChangeAction, GroupOperatorAdded, GroupOperatorRemoved,
 } from "@/scripts/tools/editorHistory/GroupAction";
+import {MoveAction} from "@/scripts/tools/editorHistory/MoveAction";
 
 export default {
   props: {maxEvents: { required: true }, canUpdateEvent: {type: Function}, onEventAdded: {type: Function}, clearRedoOnNewEvent: {type: Boolean, default: true}},
@@ -77,23 +77,16 @@ export default {
 
       // --- Change-Actions [Movement & Resize] ---
 
-      // Close the last change when we re-select an operator [visual effect]
-
-      this._registerEventListener(EVENTS.OP_INTERACTED, (op, interaction) => {
-        if (interaction !== INTERACTION.DRAG_START) return;
-
-        let lastElement = this.undoEvents[0];
-        if (lastElement instanceof OperatorChangeAction && lastElement.opID === op.id) lastElement.closed = true;
-      });
+      this._registerEventListener(EVENTS.OP_INTERACTED, (op, interaction) => { this._handleDragInteraction(interaction); });
 
       this._registerEventListener(EVENTS.OP_MOVED, (op, prev, cascaded) => {
         if(cascaded) return; // Triggered by group movement -> skip here
 
         let lastElement = this.undoEvents[0];
 
-        if (lastElement instanceof DragOperatorCA && lastElement.opID === op.id
-            && this._canUpdateEvent(lastElement)) lastElement.update(op);
-        else this.addEvent(new DragOperatorCA(op, prev));
+        // All operator movements are added to same movement event
+        if (lastElement instanceof MoveAction && this._canUpdateEvent(lastElement)) lastElement.update(op, prev);
+        else this.addEvent(new MoveAction(op, prev));
       });
 
       this._registerEventListener(EVENTS.OP_RESIZED, (op, prev) => {
@@ -109,18 +102,22 @@ export default {
       this._registerEventListener(EVENTS.CONNECTION_CREATED, (con) => { this.addEvent(new AddConnectionAction(con)) });
       this._registerEventListener(EVENTS.CONNECTION_REMOVED, (con) => { this.addEvent(new RemoveConnectionAction(con)) });
 
-      // All 'reroute' changes (pin addition, removal, dragging) are tracked as one!
+      // Reroutes added or removed
 
-      this._registerEventListener(EVENTS.CONNECTION_REROUTES_CHANGED, (con, prevVal, cascaded) => {
+      this._registerEventListener(EVENTS.CONNECTION_REROUTES_CHANGED, (con, prevVal) => { this.addEvent(new RerouteChangeAction(con, prevVal)); });
+
+      // --- Change-Actions [Movement] ---
+
+      this._registerEventListener(EVENTS.CONNECTION_REROUTES_INTERACTED, (pin, interaction) => { this._handleDragInteraction(interaction); });
+
+      this._registerEventListener(EVENTS.CONNECTION_REROUTES_MOVED, (pin, prevVal, cascaded) => {
         if(cascaded) return; // Triggered by group movement -> skip here
 
         let lastElement = this.undoEvents[0];
 
-        if (lastElement instanceof RerouteChangeAction && lastElement.connectionID === con.id &&
-            this._canUpdateEvent(lastElement)) lastElement.update(con);
-
-        this.addEvent(new RerouteChangeAction(con, prevVal));
-      })
+        if (lastElement instanceof MoveAction && this._canUpdateEvent(lastElement)) lastElement.update(pin, prevVal);
+        else this.addEvent(new MoveAction(pin, prevVal));
+      });
     },
 
     _registerGroups() {
@@ -131,14 +128,7 @@ export default {
 
       // --- Change-Actions [Movement] ---
 
-      // Close the last group change event when we re-select a group [visual effect]
-
-      this._registerEventListener(EVENTS.GROUP_INTERACTED, (group, interaction) => {
-        if (interaction !== INTERACTION.DRAG_START) return;
-
-        let lastElement = this.undoEvents[0];
-        if (lastElement instanceof GroupChangeAction && lastElement.groupID === group.id) lastElement.closed = true;
-      });
+      this._registerEventListener(EVENTS.GROUP_INTERACTED, (group, interaction) => { this._handleDragInteraction(interaction); });
 
       this._registerEventListener(EVENTS.GROUP_MOVED, (group, prevPos) => {
         let lastElement = this.undoEvents[0];
@@ -148,6 +138,16 @@ export default {
         else this.addEvent(new GroupMoveAction(group, prevPos));
       });
 
+    },
+
+    _handleDragInteraction(interaction) {
+      // Close the last drag event when drag is finished or restarted [visual effect]
+
+      if (!(interaction === INTERACTION.DRAG_START || interaction === INTERACTION.DRAG_END)) return;
+
+      let lastElement = this.undoEvents[0]; // Close last change event when selecting an operator
+      if (lastElement instanceof OperatorChangeAction || lastElement instanceof GroupChangeAction
+          || lastElement instanceof MoveAction) lastElement.closed = true;
     },
 
     _registerEventListener(event, callback) {
@@ -176,7 +176,7 @@ export default {
 
       if(this.maxEvents != null && this.undoEvents.length > this.maxEvents) this.undoEvents.pop();
 
-      //When we add a new undo event we need to invalidate the redo events
+      // When we add a new undo event we need to invalidate the redo events
       if(this.clearRedoOnNewEvent) this.redoEvents = [];
     },
 

@@ -6,7 +6,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _StringSplit extends Definition {
     constructor(pathIdentifier){
-        super("StringSplit", "String Split", pathIdentifier);
+        super("StringSplit", "String Split", pathIdentifier,
+            "Splits the input String by the specified delimiter into a tuple of individual elements.");
     }
 
     build(operator) {

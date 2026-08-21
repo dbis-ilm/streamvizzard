@@ -46,7 +46,7 @@ export class NetworkService extends Service {
             this.socketCon.onmessage = async (ev) => {
                 let data = JSON.parse(ev.data);
 
-                await this.executeCommand(data["cmd"], data);
+                for(let d of data) await this.executeCommand(d["cmd"], d);
             }
 
             this.socketCon.onclose = function() {
@@ -59,6 +59,8 @@ export class NetworkService extends Service {
             }
         }
     }
+
+    // ---------- Pipeline Commands ----------
 
     async startPipeline(runtimeConfig) {
         this._assureSocket();
@@ -78,6 +80,8 @@ export class NetworkService extends Service {
         this.apiSend(API_PATH + "/changeAdvisorConfig", data).then();
     }
 
+    // ---------- Debugger Commands ----------
+
     changeDebuggerState(data) {
         this.apiSend(API_PATH + "/changeDebuggerState", data).then();
     }
@@ -94,39 +98,37 @@ export class NetworkService extends Service {
         return await this.apiSend(API_PATH + "/requestDebuggerStep", data);
     }
 
-    // ---------- Pipeline Configuration Storage ----------
+    // ---------- Storage Commands ----------
 
     async listStoredPipelines() {
         return await this.apiSend(API_PATH + "/listStoredPipelines")
     }
 
-    async requestStoredPipeline(pipelineName) {
-        return await this.apiSend(API_PATH + "/requestStoredPipeline", pipelineName)
+    async requestStoredPipeline(data) {
+        return await this.apiSend(API_PATH + "/requestStoredPipeline", data)
     }
 
-    async deleteStoredPipeline(pipelineName) {
-        return await this.apiSend(API_PATH + "/deleteStoredPipeline", pipelineName)
+    async deleteStoredPipeline(data) {
+        return await this.apiSend(API_PATH + "/deleteStoredPipeline", data)
     }
 
     async storePipeline(data) {
         return await this.apiSend(API_PATH + "/storePipeline", data);
     }
 
-    // ---------- Operator Configuration Storage ----------
-
     async listStoredOperators() {
         return await this.apiSend(API_PATH + "/listStoredOperators")
     }
 
-    async deleteStoredOperator(opPresetName) {
-        return await this.apiSend(API_PATH + "/deleteStoredOperator", opPresetName)
+    async deleteStoredOperator(data) {
+        return await this.apiSend(API_PATH + "/deleteStoredOperator", data)
     }
 
     async storeOperator(data) {
         return await this.apiSend(API_PATH + "/storeOperator", data);
     }
 
-    // ---------- -------------------------------- ----------
+    // --------------------- Simulation Commands ---------------------
 
     async simulate(runtimeConfig, simulateData) {
         this._assureSocket();
@@ -134,7 +136,7 @@ export class NetworkService extends Service {
         return await this.apiSend(API_PATH + "/simulate", {"runtimeConfig": runtimeConfig, "simulateData": simulateData}).then();
     }
 
-    // --------------------- Compilation ---------------------
+    // --------------------- Compilation Commands ---------------------
 
     async startCompileMode(data) {
         this._assureSocket();
@@ -171,8 +173,8 @@ export class NetworkService extends Service {
 
         return await axios.post(url, JSON.stringify(data)).then((res) => {
             return res["data"];
-        }).catch(function () {
-            return null;
+        }).catch(function (res) {
+            throw res.response?.data || null;
         });
     }
 }

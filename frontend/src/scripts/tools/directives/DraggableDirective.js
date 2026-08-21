@@ -2,74 +2,99 @@ import {SvInstance} from "@/scripts/StreamVizzard";
 import {Services} from "@/scripts/services/Services";
 
 // dragStart = pointerDown (even if we don't drag after)
+// allows modifiers=left,right,wheel, default=left || v-draggable.left.wheel...
+// Only one drag mode can be active at a time
 
 export default {
     bind(el, binding) {
-        el.__events__ = {};
-        el.__isPointerDown__ = false;
-
-        el.__origPosClient__ = {};
-        el.__currentPosEditor__ = {};
-        el.__currentPosClient__ = {};
-
         el.setAttribute("draggable", "false");
+
+        let dragState = new Map();
+        let currentDragState = null;
+
+        let currentPosEditor = {};
+        let currentPosClient = {};
+
+        // Detect drag modes
+
+        for(let mod in binding.modifiers) {
+            let button = null;
+
+            if(mod === "left") button = 0;
+            else if(mod === "right") button = 2;
+            else if(mod === "wheel") button = 1;
+            else continue;
+
+            dragState.set(button, { mode: mod, startPosClient: {}});
+        }
+
+        if(dragState.size === 0) dragState.set(0, { mode: "left", startPosClient: {}}); // Fallback = Left drag
 
         // Bind callback events
 
+        let onDragStart = null;
+        let onDragEnd = null;
+        let onDrag = null;
+
         if (binding.value && typeof binding.value === "object") {
             Object.keys(binding.value).forEach(eventName => {
-                const handler = binding.value[eventName];
-                if (typeof handler === "function") {
-                    el.__events__[eventName] = handler;
-                }
+                const eventValue = binding.value[eventName];
+
+                if (eventName === "dragStart") onDragStart = eventValue;
+                else if (eventName === "dragging") onDrag = eventValue;
+                else if (eventName === "dragEnd") onDragEnd = eventValue;
             });
         }
 
         // Bind event listener
 
         el.__pointerDown__ = (e) => {
-            if(el.__isPointerDown__ || e.button !== 0) return; // Only left click drag
+            if(currentDragState != null) return; // Already a drag happening
 
-            el.__isPointerDown__ = true;
+            let dragStateEntry = dragState.get(e.button) ?? null;
+            if(dragStateEntry === null) return; // Mode not supported
 
-            el.__origPosClient__ = {x: e.clientX, y: e.clientY};
-            el.__currentPosClient__ = {x: e.clientX, y: e.clientY};
-            el.__currentPosEditor__ = {x: SvInstance.editor.mouseX, y: SvInstance.editor.mouseY};
+            currentDragState = dragStateEntry;
+            currentDragState.origPosClient = {x: e.clientX, y: e.clientY};
+
+            currentPosClient = {x: e.clientX, y: e.clientY};
+            currentPosEditor = {x: SvInstance.editor.mouseX, y: SvInstance.editor.mouseY};
 
             e.stopPropagation();
 
             window.addEventListener('pointermove', el.__pointerMove__);
             window.addEventListener('pointerup', el.__pointerUp__);
 
-            if("dragStart" in el.__events__) el.__events__["dragStart"](e);
+            if(onDragStart != null) onDragStart(currentDragState.mode, e);
         };
 
         el.__pointerMove__ = (e) => {
-            if(!el.__isPointerDown__) return;
+            if(currentDragState === null) return; // No dragging active
 
             e.preventDefault();
             e.stopPropagation();
 
-            let deltaEditor = {x: SvInstance.editor.mouseX - el.__currentPosEditor__.x,
-                y: SvInstance.editor.mouseY - el.__currentPosEditor__.y};
-            let deltaClient = {x: e.clientX - el.__currentPosClient__.x,
-                y: e.clientY - el.__currentPosClient__.y};
+            let deltaEditor = {x: SvInstance.editor.mouseX - currentPosEditor.x,
+                y: SvInstance.editor.mouseY - currentPosEditor.y};
+            let deltaClient = {x: e.clientX - currentPosClient.x,
+                y: e.clientY - currentPosClient.y};
 
-            el.__currentPosEditor__ = {x: SvInstance.editor.mouseX, y: SvInstance.editor.mouseY};
-            el.__currentPosClient__ = {x: e.clientX, y: e.clientY};
+            currentPosEditor = {x: SvInstance.editor.mouseX, y: SvInstance.editor.mouseY};
+            currentPosClient = {x: e.clientX, y: e.clientY};
 
             if(!Services.EditorInputManager.canTranslate()) return;
 
-            if("dragging" in el.__events__) el.__events__["dragging"](e, deltaEditor.x, deltaEditor.y, deltaClient.x, deltaClient.y); // -> Editor coordinates
+            if(onDrag != null) onDrag(currentDragState.mode, e, deltaEditor.x, deltaEditor.y, deltaClient.x, deltaClient.y); // -> Editor coordinates
         };
 
         el.__pointerUp__ = (e) => {
-            if(!el.__isPointerDown__) return;
+            if(currentDragState == null) return; // No dragging active
 
-            el.__isPointerDown__ = false;
+            let dragStateEntry = dragState.get(e.button) ?? null;
+            if(dragStateEntry !== currentDragState) return; // Mode not supported or not active
 
-            let dx = el.__origPosClient__.x - e.clientX;
-            let dy = el.__origPosClient__.y - e.clientY;
+            let dx = currentDragState.startPosClient.x - e.clientX;
+            let dy = currentDragState.startPosClient.y - e.clientY;
 
             let wasMoved = (Math.abs(dx) + Math.abs(dy)) > 1; // Pixel
 
@@ -87,7 +112,9 @@ export default {
             window.removeEventListener('pointermove', el.__pointerMove__);
             window.removeEventListener('pointerup', el.__pointerUp__);
 
-            if("dragEnd" in el.__events__) el.__events__["dragEnd"](e);
+            if(onDragEnd != null) onDragEnd(currentDragState.mode, e);
+
+            currentDragState = null;
         };
 
         el.addEventListener("pointerdown", el.__pointerDown__);

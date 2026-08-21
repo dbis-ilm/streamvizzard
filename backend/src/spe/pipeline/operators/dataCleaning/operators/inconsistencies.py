@@ -1,11 +1,12 @@
-import json
 import statistics as stat
-from typing import Optional
+from typing import Optional, List, Dict
 
+from spe.common.dataType import ArrayType, FloatType, IntegerType
 from spe.pipeline.operators.operator import Operator
 from spe.common.tuple import Tuple
 
 
+@Operator.requiresInput([ArrayType(entryType=FloatType()), ArrayType(entryType=IntegerType())])
 class Inconsistency(Operator):
     def __init__(self, opID: int):
         super(Inconsistency, self).__init__(opID, 1, 2)
@@ -15,7 +16,7 @@ class Inconsistency(Operator):
         self.threshold = 0
         self.maxValue = 0
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
         self.threshold = int(data["threshold"])
         self.maxValue = int(data["maxValue"])
         self.mode = data["mode"]  # [mean, median]
@@ -24,7 +25,7 @@ class Inconsistency(Operator):
         return {"threshold": self.threshold, "maxValue": self.maxValue, "mode": self.mode}
 
     def _execute(self, tupleIn: Tuple) -> Optional[Tuple]:
-        data = tupleIn.data[0]
+        data: List = tupleIn.data[0]
         invalid = []
 
         for idx, item in enumerate(data):

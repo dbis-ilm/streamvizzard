@@ -5,35 +5,37 @@
 <script>
 
 // Note: Plotly blocks pointermove events to allow interaction with the plot
+// Multi-plots need respective settings configuration to set up traces!
+// For non-buffer modes: The plot may contain two axis if providing an additional x component [occurs for sampled data]
 
 import Plotly from 'plotly.js-dist'
 import {safeVal} from "@/scripts/tools/Utils";
 import ResizeElement from "@/components/pipeline/operator/ResizeElement.vue";
+import {EmptyMonitorData} from "@/scripts/features/monitor/OperatorMonitor";
 
 export default {
   components: {ResizeElement},
+  inject: ['performTrackedRender'],
   props: {
     /** @type {SvOperator} */
     operator: {required: true},
     settings: {type: Object, required: true},
-    value: {required: true},
+    value: {required: true}
   },
 
   data() {
     return {
-      useXDif: false, //If the first element of the plot is the reference for all elements
-      useYDif: false,
-
-      useBuffer: false, //Stores incoming elements into a buffer and displays them together
+      useBuffer: false, // Stores incoming elements into a buffer and displays them together
       maxBufferElements: null,
       bufferX: [],
-      bufferY: []
+      bufferY: [],
+      lastTime: null
     }
   },
 
   watch: {
     value() {
-      this._updateData(this.value);
+      this.performTrackedRender(() => { this._updateData(this.value) });
     },
 
     settings: {
@@ -51,86 +53,87 @@ export default {
 
       // Handle all plots
       for (let p in plots) {
-        let plot = plots[p];
+        let plotData = plots[p];
 
-        let x = []
-        let y = []
+        let plotX = []
+        let plotY = []
 
         // Load old buffer elements
         if(this.useBuffer) {
-          if(this.bufferX.length - 1 >= p) x = this.bufferX[p];
+          if(this.bufferX.length - 1 >= p) plotX = this.bufferX[p];
           else this.bufferX.push([]);
 
-          if(this.bufferY.length - 1 >= p) y = this.bufferY[p];
+          if(this.bufferY.length - 1 >= p) plotY = this.bufferY[p];
           else this.bufferY.push([]);
         }
 
-        let twoAxis = Array.isArray(plot[0]);
-        let firstElement = plot[plot.length - 1];
-
-        let sampleRate = null;
-
-        if(this.maxBufferElements != null && !this.useBuffer &&
-            plot.length > this.maxBufferElements) {
-          sampleRate = Math.ceil(plot.length / this.maxBufferElements);
-        }
-
         // Collect elements of this plot
-        for (let i = 0; i < plot.length; i++) {
-          if(sampleRate != null && i % sampleRate !== 0) continue;
+        for (let i = 0; i < plotData.length; i++) {
+          let data = plotData[i];
 
-          let entry = plot[i];
+          // Determine x value
 
-          let xElement = 0
-          let yElement = 0
+          let xElement;
+          let yElement;
 
-          //TODO: Default xAxis label might be wrong (twoAxis with timestamp vs tupleCount)
-          if (twoAxis) {
-            if(this.useXDif) xElement = -(firstElement[0] - entry[0]);
-            else xElement = entry[0];
+          // Use delta time
+          if(this.useBuffer) {
+            yElement = data;
+            xElement = time // Time=Seconds
 
-            if(this.useYDif) yElement = -(firstElement[1] - entry[1]);
-            else yElement = entry[1];
-          } else {
-            if(this.useBuffer) {
-              xElement = time / 1000; // In Seconds
+            // If the time value is smaller than the last one we remove all prev outdated values (occurs during traversal)
+            // Low effort solution which is unreliable for branch switches (forward movement in different branch), this is fine for now
 
-              // If the time value is smaller than the last one we remove all prev outdated values (occurs during traversal)
+            for(let j = plotX.length - 1; j >= 0; j--) {
+              let prevElm = plotX[j];
 
-              for(let j = x.length - 1; j >= 0; j--) {
-                let elm = x[j];
-
-                if (xElement <= elm) x.pop();
-                else break;
-              }
-            } else xElement = x.length + 1;
-
-            if(this.useYDif) yElement = -(firstElement - entry);
-            else yElement = entry;
-          }
-
-          x.push(xElement);
-          y.push(yElement);
-        }
-
-        // Update buffer with new values & verify max buffer elements
-        if(this.useBuffer) {
-          if(this.maxBufferElements != null && x.length > this.maxBufferElements) {
-            for(let i = 0; i < x.length - this.maxBufferElements; i++) {
-              x.shift();
-              y.shift();
+              if (prevElm >= xElement) {
+                plotX.pop();
+                plotY.pop();
+              } else break;
             }
           }
 
-          this.bufferX[p] = x;
-          this.bufferY[p] = y;
+          else { // Non-buffer plots may provide an additional x-axis component
+            if(Array.isArray(data)) {
+              yElement = data[1];
+              xElement = data[0];
+            } else {
+              yElement = data;
+              xElement = plotX.length + 1;  // Use tuple number
+            }
+          }
+
+          plotX.push(xElement);
+          plotY.push(yElement);
         }
 
-        xs.push(x);
-        ys.push(y);
+        // Update buffer with new values & verify max buffer elements
+
+        if(this.useBuffer) {
+          if(this.maxBufferElements != null && plotX.length >= this.maxBufferElements) {
+            for(let i = 0; i < plotX.length - this.maxBufferElements; i++) {
+              plotX.shift();
+              plotY.shift();
+            }
+          }
+
+          this.bufferX[p] = plotX;
+          this.bufferY[p] = plotY;
+
+          // Apply delta-Time calculation to the x-data (without affecting stored buffer content)
+
+          let lastElm = plotX[plotX.length - 1];
+          plotX = plotX.map((x) => x - lastElm);
+        }
+
+        xs.push(plotX);
+        ys.push(plotY);
       }
 
-      Plotly.restyle(this.$refs.plot.$el, {'y': ys, 'x': xs});
+      this.lastTime = time;
+
+      Plotly.restyle(this.$refs.plot.$el, {y: ys, x: xs});
     },
 
     _applySettings(props) {
@@ -146,8 +149,9 @@ export default {
           p.push({
             x: [],
             y: [],
-            type:"scatter",
-            yaxis: {title: {text: "HI"}},
+            type: "scatter",
+            yaxis: {type: "linear"},
+            xaxis: {type: "linear"},
             mode: safeVal(plot.mode, ""),
             hovertemplate: safeVal(plot.hover, "%{x:.2f}<br>%{y:.2f}<extra></extra>"),
             line: plot.line
@@ -161,14 +165,16 @@ export default {
 
       let layout = {};
 
-      this.useXDif = props.useXDif != null ? props.useXDif : this.useXDif;
-      this.useYDif = props.useYDif != null ? props.useYDif : this.useXDif;
-
       this.useBuffer = props.useBuffer != null ? props.useBuffer : this.useBuffer;
       this.maxBufferElements = props.maxBufferElements != null ? parseInt(props.maxBufferElements) : this.maxBufferElements;
 
-      layout["xaxis.range"] = props.xrange;
+      // Either both sides or none can be set. If only one is set, Plotly defaults to auto-range.
+      // Problem: one-sided range is invalidated by data update. Performing this after data update might lead
+      // to invalid ranges (if data is smaller than min range) which will again default to auto-range.
+      // Only stable solution would be to manually track min/max sides, which is quite a lot of manual effort.
+
       layout["yaxis.range"] = props.yrange;
+      layout["xaxis.range"] = props.xrange;
 
       layout["xaxis.visible"] = props.xvisible;
       layout["yaxis.visible"] = props.yvisible;
@@ -180,13 +186,22 @@ export default {
     },
 
     _updateData(data) {
-      // In case of buffer not all elements might be transmitted during debug traversal due to message transfer optimization
+      // Note: In case of buffer not all elements might be transmitted during debug traversal due to message transfer optimization
 
-      if(data != null) {
-        this._handlePlots(data.plots, data.time);
-      } else {
+      // If we receive "missing data", artificially add null values for each previous plot inside the data buffer
+      // Add small offset the last time to avoid eviction of "outdated" data
+      // For non-buffer displays, we clear the plot since no data was transmitted
+
+      if(data instanceof EmptyMonitorData) {
+        if(this.useBuffer) data = { "plots": this.bufferX.map(() => [null]), "time": this.lastTime + 1e-6 };
+        else data = null;
+      }
+
+      if(data != null) this._handlePlots(data.plots, data.time);
+      else {
         this.bufferX = [];
         this.bufferY = [];
+        this.lastTime = null;
 
         Plotly.restyle(this.$refs.plot.$el, {'y': null, 'x': null});
       }
@@ -209,12 +224,14 @@ export default {
         yaxis: {
           automargin: true,
           fixedrange: true,
-          visible: true
+          visible: true,
+          type: "linear"
         },
         xaxis: {
           visible: true,
           fixedrange: true,
-          automargin: true
+          automargin: true,
+          type: "linear"
         }
       };
     },
@@ -226,24 +243,29 @@ export default {
   },
 
   mounted() {
-    Plotly.newPlot( this.$refs.plot.$el, [{
+    Plotly.newPlot(this.$refs.plot.$el, [{
       x: [],
       y: [],
-      type:"scatter",
-      mode:"", //Auto
+      type: "scatter",
+      mode: "lines",
+      yaxis: {type: "linear"},
+      xaxis: {type: "linear"},
       hovertemplate: "%{x:.2f}<br>%{y:.2f}<extra></extra>"
     }], this._getPlotConfig(), {displayModeBar: false, dragMode: false, scrollZoom: false}).then((gd)=> {
       Plotly.relayout(gd, { autosize: true }); // Force initial layout
 
-      this.resizeObserver = new ResizeObserver(() => Plotly.relayout(this.$refs.plot.$el, {"autosize": true}));
+      if(this.$refs.plot) this._applySettings(this.settings);
+
+      this.resizeObserver = new ResizeObserver(() => { // If we switch on load, this might return no plot
+        if(this.$refs.plot) Plotly.relayout(this.$refs.plot.$el, {"autosize": true});
+      });
+
       this.resizeObserver.observe(this.$el);
     });
-
-    this._applySettings(this.settings);
   },
 
   beforeDestroy() {
-    this.resizeObserver.unobserve(this.$el);
+    this.resizeObserver?.unobserve(this.$el);
   }
 }
 </script>
@@ -260,9 +282,11 @@ export default {
 </style>
 
 <style>
+
 .dtPlot svg {
   border-radius: 2px;
   border: 1px solid var(--main-hover-color);
   box-sizing: border-box;
 }
+
 </style>

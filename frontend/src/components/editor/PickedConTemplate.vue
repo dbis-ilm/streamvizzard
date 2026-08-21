@@ -8,6 +8,10 @@ export default {
   computed: {
     hoverTitle() {
       return ""; // Override parent
+    },
+
+    focused() {
+      return false; // Override parent
     }
   },
 

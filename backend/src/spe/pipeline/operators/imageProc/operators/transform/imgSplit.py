@@ -1,13 +1,13 @@
-import json
-from typing import Optional
+from typing import Optional, Dict, List
 
 import cv2
 
-from spe.pipeline.operators.imageProc.dataTypes.image import Image
+from spe.pipeline.operators.imageProc.dataTypes.image import Image, ImageType
 from spe.pipeline.operators.operator import Operator
 from spe.common.tuple import Tuple
 
 
+@Operator.requiresInput(ImageType())
 class ImgSplit(Operator):
     """
     Inputs: 1
@@ -17,25 +17,21 @@ class ImgSplit(Operator):
     def __init__(self, opID: int):
         super(ImgSplit, self).__init__(opID, 1, 4)
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
         pass
 
     def getData(self) -> dict:
         return {}
 
     def _execute(self, tupleIn: Tuple) -> Optional[Tuple]:
-        inMat = tupleIn.data[0].mat
+        img: Image = tupleIn.data[0]
 
-        resCh = cv2.split(inMat)  # Tuple of Mats
+        resCh = cv2.split(img.mat)  # Tuple of Mats
 
-        imgArray = [None] * len(self.outputs)
+        imgArray: List[Optional[Image]] = [None] * len(self.outputs)
 
         for i in range(0, min(len(self.outputs), len(resCh))):
             mt = resCh[i]
-
-            # Fill all other channels with zero and place the extracted channel
-            # res = np.zeros(inMat.shape)
-            # res[:, :, i] = mt
 
             imgArray[i] = Image(mt)
 

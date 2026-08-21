@@ -7,7 +7,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _Threshold extends Definition {
     constructor(pathIdentifier){
-        super("Threshold", "Threshold", pathIdentifier);
+        super("Threshold", "Threshold", pathIdentifier,
+            "Compares each pixel in the input grayscale image with a threshold and modifies its value based on the mode.");
     }
 
     build(operator) {

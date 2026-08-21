@@ -6,7 +6,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _Convert extends Definition {
     constructor(pathIdentifier){
-        super("Convert", "Convert", pathIdentifier);
+        super("Convert", "Convert", pathIdentifier,
+            "Converts the input image into a specified format.");
     }
 
     build(operator) {

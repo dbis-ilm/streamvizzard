@@ -6,7 +6,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _ImgAdd extends Definition {
     constructor(pathIdentifier){
-        super("ImgAdd", "Img Add", pathIdentifier);
+        super("ImgAdd", "Img Add", pathIdentifier,
+            "Adds a numerical values to each pixel in the input image.");
     }
 
     build(operator) {

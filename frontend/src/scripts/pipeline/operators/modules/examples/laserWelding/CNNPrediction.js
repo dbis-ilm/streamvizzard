@@ -6,7 +6,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _CNNPrediction extends Definition {
     constructor(pathIdentifier){
-        super("CNNPredictionSL", "CNN Prediction", pathIdentifier);
+        super("CNNPredictionSL", "CNN Prediction", pathIdentifier,
+            "Predicts the laser-welding seam break based on LWIR input images of the emerging weld.");
     }
 
     build(operator) {

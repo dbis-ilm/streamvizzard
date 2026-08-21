@@ -17,6 +17,8 @@ if TYPE_CHECKING:
     from spe.pipeline.pipeline import Pipeline
     from spe.common.tuple import Tuple
 
+# Future Work: Data types could also include a statistic how often they occurred!
+
 
 class PipelineDataAnalyzer:
     def __init__(self):

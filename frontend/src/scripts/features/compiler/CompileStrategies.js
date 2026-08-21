@@ -197,8 +197,14 @@ class CompileOptionMultiSelect extends CompileOptionSelect {
     }
 
     setValue(newVal) {
-        for(let i in newVal) {
-            if (typeof newVal[i] !== "object") newVal[i] = this.options.find((el) => el.key === newVal[i]);
+        for(let i = newVal.length; i >= 0; i--) {
+            // Only apply values that are present in the option array
+            if (typeof newVal[i] !== "object") {
+                let option = this.options.find((el) => el.key === newVal[i]);
+
+                if(option != null) newVal[i] = option;
+                else newVal.splice(i, 1);
+            }
         }
 
         this.value = newVal;
@@ -209,7 +215,7 @@ class CompileOptionMultiSelect extends CompileOptionSelect {
     }
 }
 
-class CompileOptionStrategy {
+export class CompileOptionStrategy {
     constructor(key, title, elements = [], onValueChangedCallback) {
         this.key = key;
         this.title = title;

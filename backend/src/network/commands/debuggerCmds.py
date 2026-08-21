@@ -1,17 +1,15 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Optional, Dict
+from typing import TYPE_CHECKING, Dict
 
-from network.commands.commands import Command
-
+from network.commands.commands import Command, CommandRes
 
 if TYPE_CHECKING:
     from spe.runtime.runtimeManager import RuntimeManager
     from spe.runtime.debugger.pipelineDebugger import PipelineDebugger
+    from network.server import NetworkMode
 
-
-# TODO: We could replace all json data objects with serializable classes for better maintainability
 
 def applyDebuggerConfig(debugger: PipelineDebugger, data: Dict):
     debugger.changeDebuggerConfig(data.get("enabled", False),
@@ -24,56 +22,65 @@ def applyDebuggerConfig(debugger: PipelineDebugger, data: Dict):
 
 
 class ChangeDebuggerStateCMD(Command):
-    def __init__(self):
-        super().__init__("changeDebuggerState")
+    def __init__(self, networkMode: NetworkMode):
+        super().__init__("changeDebuggerState", networkMode)
 
-    def handleCommand(self, rm: RuntimeManager, data: Dict) -> Optional:
+    def handleCommand(self, rm: RuntimeManager, data: Dict) -> CommandRes:
         if rm.gateway.getDebugger() is not None:
             rm.gateway.getDebugger().changeDebuggerState(data["historyActive"], data["historyRewind"])
 
-        return None
+            return CommandRes.ok()
+
+        return CommandRes.error("Debugger not enabled!")
 
 
 class ChangeDebuggerConfigCMD(Command):
-    def __init__(self):
-        super().__init__("changeDebuggerConfig")
+    def __init__(self, networkMode: NetworkMode):
+        super().__init__("changeDebuggerConfig", networkMode)
 
-    def handleCommand(self, rm: RuntimeManager, data: Dict) -> Optional:
+    def handleCommand(self, rm: RuntimeManager, data: Dict) -> CommandRes:
         if rm.gateway.getDebugger() is not None:
             applyDebuggerConfig(rm.gateway.getDebugger(), data)
 
-        return None
+            return CommandRes.ok()
+
+        return CommandRes.error("Debugger not enabled!")
 
 
 class DebuggerStepChange(Command):
-    def __init__(self):
-        super().__init__("debuggerStepChange")
+    def __init__(self, networkMode: NetworkMode):
+        super().__init__("debuggerStepChange", networkMode)
 
-    def handleCommand(self, rm: RuntimeManager, data: Dict) -> Optional:
+    def handleCommand(self, rm: RuntimeManager, data: Dict) -> CommandRes:
         if rm.gateway.getDebugger() is not None:
             rm.gateway.getDebugger().changeDebuggerStep(data["targetStep"], data["targetBranch"])
 
-        return None
+            return CommandRes.ok()
+
+        return CommandRes.error("Debugger not enabled!")
 
 
 class RequestDebuggerStepCMD(Command):
-    def __init__(self):
-        super().__init__("requestDebuggerStep")
+    def __init__(self, networkMode: NetworkMode):
+        super().__init__("requestDebuggerStep", networkMode)
 
-    def handleCommand(self, rm: RuntimeManager, data: Dict) -> Optional[str]:
+    def handleCommand(self, rm: RuntimeManager, data: Dict) -> CommandRes:
         if rm.gateway.getDebugger() is not None:
-            return json.dumps(
-                rm.gateway.getDebugger().requestDebuggerStep(data["targetBranch"], data["targetTime"]))
+            res = rm.gateway.getDebugger().requestDebuggerStep(data["targetBranch"], data["targetTime"])
 
-        return json.dumps(None)
+            return CommandRes.okWithRes(json.dumps(res)) if res is not None else CommandRes.error("Invalid debugging state!")
+
+        return CommandRes.error("Debugger not enabled!")
 
 
 class ExecuteProvQueryCMD(Command):
-    def __init__(self):
-        super().__init__("executeProvenanceQuery")
+    def __init__(self, networkMode: NetworkMode):
+        super().__init__("executeProvenanceQuery", networkMode)
 
-    def handleCommand(self, rm: RuntimeManager, data: Dict) -> Optional:
+    def handleCommand(self, rm: RuntimeManager, data: Dict) -> CommandRes:
         if rm.gateway.getDebugger() is not None:
             rm.gateway.getDebugger().executeProvenanceQuery(data)
 
-        return None
+            return CommandRes.ok()
+
+        return CommandRes.error("Debugger not enabled!")

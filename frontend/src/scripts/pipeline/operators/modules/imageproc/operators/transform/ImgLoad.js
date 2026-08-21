@@ -7,11 +7,12 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _ImgLoad extends Definition {
     constructor(pathIdentifier){
-        super("ImgLoad", "Img Load", pathIdentifier);
+        super("ImgLoad", "Img Load", pathIdentifier,
+            "Loads an image from an input file path.");
     }
 
     build(operator) {
-        let flags = new StringParam("flags", "", "Flags", "Given in OpenCV flag codes");
+        let flags = new StringParam("flags", "-1", "Flags", "Given in OpenCV flag codes");
 
         this._construct(operator,
             [new SocketDef(strSocket, "Path")],

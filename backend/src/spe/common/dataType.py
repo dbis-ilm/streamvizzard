@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numbers
 from abc import ABC, abstractmethod
 from typing import Any, List, Type, Optional, Dict, Callable
 
@@ -12,9 +13,10 @@ _typeNameDefLookup: Dict[str, DataType.Definition] = dict()
 # ValueType name -> DataTypeDefinition
 _valueNameDefLookup: Dict[str, DataType.Definition] = dict()
 
-_customDataTypes: List[DataType.Definition] = list()
+# Definitions that have a custom type match function
+_definitionsWithTypeMatcher: List[DataType.Definition] = list()
 
-# TODO: Fuse MonitorDataTypes into this DataTypes
+_customDataTypes: List[DataType.Definition] = list()
 
 
 class DataType(ABC):
@@ -31,6 +33,9 @@ class DataType(ABC):
 
         @abstractmethod
         def getValueType(self) -> Type:
+            """ The type of the dataType for quick check against and extractions. Custom value checks are used
+            to identify if a data object belongs to this type but not for extracting class definitions. """
+
             pass
 
         @abstractmethod
@@ -43,6 +48,9 @@ class DataType(ABC):
             If checkUniformity is true, all composite data elements will be checked to detect uniformity. """
 
             pass
+
+        def checkTypeMatch(self, data: Any) -> bool:
+            return False
 
         def getValueTypeName(self) -> str:
             return self.getValueType().__name__
@@ -79,8 +87,20 @@ class DataType(ABC):
         """ Returns all involved types in this dataType, including the root level type and all nested (composite) types. """
         return [self]
 
-    def isEquals(self, other: DataType):
+    def toReadableStr(self) -> str:
+        return self.definition.getValueTypeName()
+
+    def isEquals(self, other: DataType, shallow: bool = False):
+        """ Shallow ignores nested composite types """
         return self.typeName == other.typeName
+
+    def matches(self, data: Any, checkUniformity: bool = False) -> bool:
+        dataDef = self.retrieveDefinition(data)
+
+        if dataDef is not self.definition:
+            return False
+
+        return True
 
     # ------------------------------------------------------------------------------------------------------------------
 
@@ -118,27 +138,31 @@ class DataType(ABC):
 
     @staticmethod
     def retrieveDefinition(data: Any) -> Optional[DataType.Definition]:
-        typeDef = DataType.getDefinitionByValueType(type(data))
+        # Step 1: Try to retrieve definition by quick type lookup
+
+        typeDef = DataType.getDefinitionByValueTypeName(type(data))
 
         if typeDef is not None:
             return typeDef
 
+        # Step 2: Iterate all definitions with custom match functions
+
+        for m in _definitionsWithTypeMatcher:
+            if m.checkTypeMatch(data):
+                return m
+
         return None
+
+    @staticmethod
+    def getDefinitionByValueTypeName(valueType: Type) -> Optional[DataType.Definition]:
+        return _valueNameDefLookup.get(valueType.__name__, None)
 
     @staticmethod
     def getDefinitionByName(typeName: str) -> Optional[DataType.Definition]:
         return _typeNameDefLookup.get(typeName, None)
 
     @staticmethod
-    def getDefinitionByValueType(valueType: Type) -> Optional[DataType.Definition]:
-        return _valueNameDefLookup.get(valueType.__name__, None)
-
-    @staticmethod
-    def getValueTypeName(valueType: Optional[Type]):
-        return valueType.__name__ if valueType is not None else None
-
-    @staticmethod
-    def register(typeDef: DataType.Definition):
+    def register(typeDef: DataType.Definition, customTypeMatcher: bool = False):
         valType = typeDef.getValueType()
         valTypeName = valType.__name__
 
@@ -147,6 +171,9 @@ class DataType(ABC):
 
         _typeNameDefLookup[typeDef.typeName] = typeDef
         _valueNameDefLookup[valTypeName] = typeDef
+
+        if customTypeMatcher:
+            _definitionsWithTypeMatcher.append(typeDef)
 
         if not typeDef.systemType:
             _customDataTypes.append(typeDef)
@@ -233,6 +260,12 @@ class DictType(DataType):
 
         return base
 
+    def toReadableStr(self) -> str:
+        if self.keyType is None or self.valType is None:
+            return super().toReadableStr()
+
+        return f"{super().toReadableStr()}" + "{" + f"{self.keyType.toReadableStr()}:{self.valType.toReadableStr()}" + "}"
+
     def getNestedTypes(self) -> List[DataType]:
         res: List[DataType] = [self]
 
@@ -244,14 +277,45 @@ class DictType(DataType):
 
         return res
 
-    def isEquals(self, other: DictType):
+    def matches(self, data: Any, checkUniformity: bool = False) -> bool:
+        if not super().matches(data, checkUniformity):
+            return False
+
+        if self.keyType is None and self.valType is None:
+            return True
+
+        # Check all key/value elements to verify uniformity
+
+        if checkUniformity:
+            for k, v in data.items():
+                if self.keyType is not None and not self.keyType.matches(k, checkUniformity):
+                    return False
+
+                if self.valType is not None and not self.valType.matches(v, checkUniformity):
+                    return False
+
+        # Only checks first key/val entry
+
+        else:
+            if len(data) > 0:
+                firstKey, firstVal = next(iter(data.items()))
+
+                if self.keyType is not None and not self.keyType.matches(firstKey, checkUniformity):
+                    return False
+
+                if self.valType is not None and not self.valType.matches(firstVal, checkUniformity):
+                    return False
+
+        return True
+
+    def isEquals(self, other: DictType, shallow: bool = False):
         if not super().isEquals(other):
             return False
 
-        if not DataType.equals(self.keyType, other.keyType):
+        if not shallow and not DataType.equals(self.keyType, other.keyType):
             return False
 
-        if not DataType.equals(self.valType, other.valType):
+        if not shallow and not DataType.equals(self.valType, other.valType):
             return False
 
         return True
@@ -272,7 +336,7 @@ class WindowType(DataType):
 
             return WindowType(self, DataType.fromJSONConfig(entryType) if entryType is not None else None, uniform)
 
-        def fromData(self, data: Any, checkUniformity: bool = False) -> DataType:
+        def fromData(self, data: Window, checkUniformity: bool = False) -> DataType:
             entryType: Optional[DataType] = None
             uniform = True
 
@@ -316,11 +380,31 @@ class WindowType(DataType):
 
         return res
 
-    def isEquals(self, other: WindowType):
+    def matches(self, data: Any, checkUniformity: bool = False) -> bool:
+        if not super().matches(data, checkUniformity):
+            return False
+
+        if self.entryType is None:  # Fallback, no information about type
+            return True
+
+        window: Window = data
+
+        if checkUniformity:  # Checks all entries
+            for d in window.iterateData():
+                if not self.entryType.matches(d, checkUniformity):
+                    return False
+
+        elif window.getCount() > 0:  # Only checks first entry
+            if not self.entryType.matches(window.getDataAt(0), checkUniformity):
+                return False
+
+        return True
+
+    def isEquals(self, other: WindowType, shallow: bool = False):
         if not super().isEquals(other):
             return False
 
-        if not DataType.equals(self.entryType, other.entryType):
+        if not shallow and not DataType.equals(self.entryType, other.entryType):
             return False
 
         return True
@@ -363,6 +447,7 @@ class ArrayType(DataType):
             return ArrayType(self, entryType, uniform)
 
     def __init__(self, definition: Optional[ArrayDTD] = None, entryType: Optional[DataType] = None, uniform: Optional[bool] = False):
+
         if definition is None:
             definition = DataType.getDefinitionByName(ArrayType.name)
 
@@ -377,6 +462,12 @@ class ArrayType(DataType):
 
         return base
 
+    def toReadableStr(self) -> str:
+        if self.entryType is None:
+            return super().toReadableStr()
+
+        return f"{super().toReadableStr()}[{self.entryType.toReadableStr()}]"
+
     def getNestedTypes(self) -> List[DataType]:
         res: List[DataType] = [self]
 
@@ -385,11 +476,29 @@ class ArrayType(DataType):
 
         return res
 
-    def isEquals(self, other: ArrayType):
+    def matches(self, data: Any, checkUniformity: bool = False) -> bool:
+        if not super().matches(data, checkUniformity):
+            return False
+
+        if self.entryType is None:  # Fallback, no information about type
+            return True
+
+        if checkUniformity:  # Checks all entries
+            for d in data:
+                if not self.entryType.matches(d, checkUniformity):
+                    return False
+
+        elif len(data) > 0:  # Only checks first entry
+            if not self.entryType.matches(data[0], checkUniformity):
+                return False
+
+        return True
+
+    def isEquals(self, other: ArrayType, shallow: bool = False):
         if not super().isEquals(other):
             return False
 
-        if not DataType.equals(self.entryType, other.entryType):
+        if not shallow and not DataType.equals(self.entryType, other.entryType):
             return False
 
         return True
@@ -429,7 +538,12 @@ class TupleType(DataType):
 
                 return TupleType(self, entryTypes, uniform)
             else:
-                return TupleType(self, [DataType.retrieve(d) for d in data], None)
+                entryTypes = None
+
+                if len(data) > 0:  # Take first entry as a representative for all
+                    entryTypes = [DataType.retrieve(data[0])] * len(data)
+
+                return TupleType(self, entryTypes, None)
 
     def __init__(self, definition: Optional[TupleDTD] = None, entryTypes: Optional[List[Optional[DataType]]] = None, uniform: Optional[bool] = False):
         if definition is None:
@@ -446,6 +560,12 @@ class TupleType(DataType):
 
         return base
 
+    def toReadableStr(self) -> str:
+        if self.entryTypes is None:
+            return super().toReadableStr()
+
+        return f"{super().toReadableStr()}[{','.join([d.toReadableStr() for d in self.entryTypes if d is not None])}]"
+
     def getNestedTypes(self) -> List[DataType]:
         res: List[DataType] = [self]
 
@@ -457,9 +577,38 @@ class TupleType(DataType):
 
         return res
 
-    def isEquals(self, other: TupleType):
+    def matches(self, data: Any, checkUniformity: bool = False) -> bool:
+        if not super().matches(data, checkUniformity):
+            return False
+
+        if self.entryTypes is None:  # Fallback, no information about types
+            return True
+
+        if checkUniformity:  # Checks all entries
+            for dIDX in range(len(data)):
+                if len(self.entryTypes) <= dIDX:
+                    return False
+
+                d = data[dIDX]
+                t = self.entryTypes[dIDX]
+
+                if t is not None and not t.matches(d, checkUniformity):
+                    return False
+
+        elif len(data) > 0 and len(self.entryTypes) > 0:  # Only checks first entry
+            t = self.entryTypes[0]
+
+            if t is not None and not t.matches(data[0], checkUniformity):
+                return False
+
+        return True
+
+    def isEquals(self, other: TupleType, shallow: bool = False):
         if not super().isEquals(other):
             return False
+
+        if shallow:
+            return True
 
         if self.entryTypes is not None and other.entryTypes is not None:
             for idx, et1 in enumerate(self.entryTypes):
@@ -528,6 +677,8 @@ class StringType(DataType):
 
 
 class IntegerType(DataType):
+    """ Includes all non-real integral values"""
+
     name = "Integer"
 
     class IntegerDTD(DataType.Definition):
@@ -536,6 +687,9 @@ class IntegerType(DataType):
 
         def getValueType(self) -> Optional[Type]:
             return int
+
+        def checkTypeMatch(self, data: Any) -> bool:
+            return isinstance(data, numbers.Integral)
 
         def fromJSONConfig(self, data: Dict, uniform: bool) -> DataType:
             return IntegerType(self)
@@ -550,9 +704,8 @@ class IntegerType(DataType):
         super().__init__(definition, uniform=True)
 
 
-# TODO: This does not detect numpy.float types, etc.
 class FloatType(DataType):
-    """ Pythons floats are already double precision """
+    """ Pythons floats are already double precision, Includes all non-integer real numbers! """
 
     name = "Float"
 
@@ -562,6 +715,9 @@ class FloatType(DataType):
 
         def getValueType(self) -> Optional[Type]:
             return float
+
+        def checkTypeMatch(self, data: Any) -> bool:
+            return isinstance(data, numbers.Real) and not isinstance(data, numbers.Integral)
 
         def fromJSONConfig(self, data: Dict, uniform: bool) -> DataType:
             return FloatType(self)
@@ -622,10 +778,14 @@ class NoneType(DataType):
         super().__init__(definition, uniform=True)
 
 
+# TODO: Could a "external" types such as ndarray. Compiler must import those instead of extracting.
+#       DataDisplayTypes would need custom preprocessors, such as .tolist to reuse existing methods.
+
+
 DataType.register(NoneType.NoneDTD())
 DataType.register(BooleanType.BooleanDTD())
-DataType.register(FloatType.FloatDTD())
-DataType.register(IntegerType.IntegerDTD())
+DataType.register(FloatType.FloatDTD(), True)
+DataType.register(IntegerType.IntegerDTD(), True)
 DataType.register(StringType.StringDTD())
 DataType.register(BytesType.BytesDTD())
 DataType.register(ArrayType.ArrayDTD())

@@ -8,7 +8,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _TextFile extends Definition {
     constructor(pathIdentifier){
-        super("TextFile", "Text File", pathIdentifier, true);
+        super("TextFile", "Text File", pathIdentifier,
+            "Reads elements line-by-line from a text file and streams them into the pipeline.", true);
     }
 
     build(operator) {

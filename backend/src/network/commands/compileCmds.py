@@ -1,55 +1,71 @@
 from __future__ import annotations
 
-import json
-from typing import Dict, Optional
+from typing import Dict, TYPE_CHECKING
 
-from network.commands.commands import Command
+from network.commands.commands import Command, CommandRes
 from spe.pipeline.pipelineManager import PipelineManager
-from spe.runtime.runtimeManager import RuntimeManager
+
+if TYPE_CHECKING:
+    from network.server import NetworkMode
+    from spe.runtime.runtimeManager import RuntimeManager
 
 
 class CompileModeStartCMD(Command):
-    def __init__(self):
-        super().__init__("compileStart")
+    def __init__(self, networkMode: NetworkMode):
+        super().__init__("compileStart", networkMode)
 
-    def handleCommand(self, rm: RuntimeManager, data: Dict) -> Optional[str]:
-        pipeData = data["pipeline"]
-        pipelineRes = PipelineManager.createPipeline(pipeData)
+    def handleCommand(self, rm: RuntimeManager, data: Dict) -> CommandRes:
+        if (compiler := rm.gateway.getCompiler()) is not None:
+            pipeData = data["pipeline"]
+            pipelineRes = PipelineManager.createPipeline(pipeData)
 
-        if pipelineRes.hasError():
-            return json.dumps({"res": False, "error": pipelineRes.errorMsg})
+            if pipelineRes.hasError():
+                return CommandRes.error(pipelineRes.errorMsg)
 
-        rm.gateway.getCompiler().startCompileMode(pipelineRes.pipeline)
+            compiler.startCompileMode(pipelineRes.pipeline)
 
-        return json.dumps({"res": True, "error": None})
+            return CommandRes.ok()
+
+        return CommandRes.error("Compiler not enabled!")
 
 
 class CompileAnalyzeCMD(Command):
-    def __init__(self):
-        super().__init__("compileAnalyze")
+    def __init__(self, networkMode: NetworkMode):
+        super().__init__("compileAnalyze", networkMode)
 
-    def handleCommand(self, rm: RuntimeManager, data: Dict) -> Optional[str]:
-        compileConfigs = data["compileConfigs"]
-        strategyData = data["strategy"]
+    def handleCommand(self, rm: RuntimeManager, data: Dict) -> CommandRes:
+        if (compiler := rm.gateway.getCompiler()) is not None:
+            compileConfigs = data["compileConfigs"]
+            strategyData = data["strategy"]
 
-        return json.dumps(
-            rm.gateway.getCompiler().calculateTargetSuggestions(strategyData, compileConfigs),
-            default=vars)
+            res = compiler.calculateTargetSuggestions(strategyData, compileConfigs)
+
+            return CommandRes.error(res.errorMsg) if res.hasError() else CommandRes.okWithRes(res.result)
+
+        return CommandRes.error("Compiler not enabled!")
 
 
 class CompilePipelineCMD(Command):
-    def __init__(self):
-        super().__init__("compilePipeline")
+    def __init__(self, networkMode: NetworkMode):
+        super().__init__("compilePipeline", networkMode)
 
-    def handleCommand(self, rm: RuntimeManager, data: Dict) -> str:
-        res = rm.gateway.getCompiler().compilePipeline(data["opCompileConfigs"], data["compileConfig"])
+    def handleCommand(self, rm: RuntimeManager, data: Dict) -> CommandRes:
+        if (compiler := rm.gateway.getCompiler()) is not None:
+            res = compiler.compilePipeline(data["opCompileConfigs"], data["compileConfig"])
 
-        return json.dumps(res.toJSON())
+            return CommandRes.error(res.errorMsg) if res.hasError() else CommandRes.okWithRes(res.result)
+
+        return CommandRes.error("Compiler not enabled!")
 
 
 class CompileModeEndCMD(Command):
-    def __init__(self):
-        super().__init__("compileEnd")
+    def __init__(self, networkMode: NetworkMode):
+        super().__init__("compileEnd", networkMode)
 
-    def handleCommand(self, rm: RuntimeManager, data: Dict):
-        rm.gateway.getCompiler().endCompileMode()
+    def handleCommand(self, rm: RuntimeManager, data: Dict) -> CommandRes:
+        if (compiler := rm.gateway.getCompiler()) is not None:
+            compiler.endCompileMode()
+
+            return CommandRes.ok()
+
+        return CommandRes.error("Compiler not enabled!")

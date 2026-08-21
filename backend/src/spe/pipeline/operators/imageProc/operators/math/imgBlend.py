@@ -1,13 +1,14 @@
-import json
-from typing import Optional
+from typing import Optional, Dict
 
 import cv2
 
-from spe.pipeline.operators.imageProc.dataTypes.image import Image
+from spe.pipeline.operators.imageProc.dataTypes.image import Image, ImageType
 from spe.pipeline.operators.operator import Operator
 from spe.common.tuple import Tuple
+from utils.utils import tryParseFloat
 
 
+@Operator.requiresInput(ImageType())
 class ImgBlend(Operator):
     """
     Inputs: 2
@@ -19,14 +20,16 @@ class ImgBlend(Operator):
 
         self.alpha = 0
 
-    def setData(self, data: json):
-        self.alpha = data["alpha"]
+    def setData(self, data: Dict):
+        self.alpha = tryParseFloat(data["alpha"])
 
     def getData(self) -> dict:
         return {"alpha": self.alpha}
 
     def _execute(self, tupleIn: Tuple) -> Optional[Tuple]:
-        res = cv2.addWeighted(tupleIn.data[0].mat, self.alpha,
-                              tupleIn.data[1].mat, 1 - self.alpha, 0)
+        img1: Image = tupleIn.data[0]
+        img2: Image = tupleIn.data[1]
+
+        res = cv2.addWeighted(img1.mat, self.alpha, img2.mat, 1 - self.alpha, 0)
 
         return self.createTuple((Image(res),))

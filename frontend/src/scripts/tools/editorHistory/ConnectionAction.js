@@ -84,9 +84,4 @@ export class RerouteChangeAction extends ConnectionAction {
     async redo() {
         return this.setReroutes(this.reroutes);
     }
-
-    /** @param {SvConnection} con */
-    update(con) {
-        this.reroutes = con.exportReroutes();
-    }
 }

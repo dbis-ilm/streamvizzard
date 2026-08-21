@@ -7,9 +7,11 @@
 
 import {valueOr} from "@/scripts/tools/Utils";
 import ResizeElement from "@/components/pipeline/operator/ResizeElement.vue";
+import {EmptyMonitorData} from "@/scripts/features/monitor/OperatorMonitor";
 
 export default {
   components: {ResizeElement},
+  inject: ['performTrackedRender'],
   props: {
     /** @type {SvOperator} **/
     operator: {required: true},
@@ -29,7 +31,7 @@ export default {
 
   watch: {
     value() {
-      this._updateDisplayValue(this.value);
+      this.performTrackedRender(() => { this._updateDisplayValue(this.value) });
     },
 
     settings: {
@@ -74,14 +76,16 @@ export default {
     _updateDisplayValue(data) {
       data = valueOr(data, "");
 
-      if(this.exp != null) {
+      if(data instanceof EmptyMonitorData) data = "[Empty]";
+
+      if(this.exp != null && this.exp !== "$VAL" && data !== "") {
         try { this.displayValue = (new Function("return " + this.exp.replace("$VAL", "'" + data + "'") + ";")()); }
-        catch(_) {
-          //ignore
+        catch(trace) {
+          console.log("Error in raw data display: " + trace);
         }
       } else this.displayValue = data;
 
-      if(this.maxLength != null && this.maxLength > 0 && this.displayValue != null) this.displayValue = this.displayValue.substring(0, this.maxLength);
+      if(this.maxLength != null && this.maxLength > 0 && this.displayValue != null) this.displayValue = String(this.displayValue).substring(0, this.maxLength);
     },
   },
 

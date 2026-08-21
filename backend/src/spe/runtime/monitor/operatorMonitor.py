@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING, Optional, Dict
 
+from spe.common.timer import Timer
 from spe.runtime.debugger.debugTuple import DebugTuple
 from spe.runtime.debugger.debuggingUtils import retrieveStoredDTRef
 from spe.runtime.debugger.history.historyState import HistoryState
@@ -18,30 +19,17 @@ if TYPE_CHECKING:
 
 class OperatorMonitor:
     class Entry:
-        def __init__(self, executionDuration: float, outputSize: int):
+        def __init__(self, timestamp: float, executionDuration: float, outputSize: int):
+            self.timestamp = timestamp  # In s
             self.executionDuration = executionDuration  # In ms
             self.outputSize = outputSize  # In bytes
 
+            self.prevTimestamp = 0  # Calculated
             self.prevAvgExecutionDuration = 0  # Calculated
             self.prevAvgDataSize = 0  # Calculated
 
-        def __eq__(self, other):
-            return (math.isclose(self.executionDuration, other.executionDuration)
-                    and math.isclose(self.prevAvgExecutionDuration, other.prevAvgExecutionDuration)
-                    and math.isclose(self.prevAvgDataSize, other.prevAvgDataSize)
-                    and self.outputSize == other.outputSize)
-
-        def __hash__(self):
-            return id(self)
-
-        def toJSON(self):
-            return {"exDuration": self.executionDuration,
-                    "outputSize": self.outputSize,
-                    "prevAvgExecutionDuration": self.prevAvgExecutionDuration,
-                    "prevAvgDataSize": self.prevAvgDataSize}
-
     def __init__(self, operator: Operator):
-        self.SMOOTH = StreamVizzard.getConfig().MONITORING_OPERATOR_SMOOTH_FACTOR
+        self.EMA_WINDOW = StreamVizzard.getConfig().MONITORING_EMA_WINDOW
 
         self._monitor = getRuntimeManager().gateway.getMonitor()
 
@@ -60,6 +48,8 @@ class OperatorMonitor:
         self._avgExecutionTime = 0  # Calculated [ms]
         self._avgDataSize = 0  # Calculated [bytes]
 
+        self._timestamp = 0
+
         # Register listener
         self._operator.getEventListener().register(self._operator.EVENT_TUPLE_PROCESSED, self._onTupleProcessed)
 
@@ -76,7 +66,7 @@ class OperatorMonitor:
 
         self._monitor.onOperatorError(self._operator, errorMsg)
 
-    def _onTupleProcessed(self, tupleIn: Tuple, executionDuration):
+    def _onTupleProcessed(self, tupleIn: Tuple, executionDuration: float):
         # tupleIn might be None if the very first process tuple DS is undone
 
         historyState = self._operator.getHistoryState()
@@ -105,7 +95,7 @@ class OperatorMonitor:
             if dt is not None and self._currentTuple is not None:
                 dt.registerAttribute("opMon_prevTup", self._currentTuple.uuid)
 
-            self._registerTuple(OperatorMonitor.Entry(max(0, executionDuration * 1000), tupleIn.calcMemorySize()), dt)
+            self._registerTuple(OperatorMonitor.Entry(Timer.currentTime(), max(0.0, executionDuration * 1000), tupleIn.calcMemorySize()), dt)
 
         self._currentTuple = tupleIn
 
@@ -130,27 +120,43 @@ class OperatorMonitor:
         if add:
             self._totalTuples += 1
 
+            t.prevTimestamp = self._timestamp
             t.prevAvgExecutionDuration = self._avgExecutionTime  # Store prev value for undo
             t.prevAvgDataSize = self._avgDataSize
 
             if self._totalTuples > 1:  # Can only apply EMA if we already have a value
-                self._avgExecutionTime = self.SMOOTH * t.executionDuration + (1 - self.SMOOTH) * self._avgExecutionTime
-                self._avgDataSize = self.SMOOTH * t.outputSize + (1 - self.SMOOTH) * self._avgDataSize
+                dt = t.timestamp - self._timestamp
+                alpha = 1 - math.exp(-dt / self.EMA_WINDOW)
+
+                self._avgExecutionTime = alpha * t.executionDuration + (1 - alpha) * self._avgExecutionTime
+                self._avgDataSize = alpha * t.outputSize + (1 - alpha) * self._avgDataSize
             else:
                 self._avgExecutionTime = t.executionDuration
                 self._avgDataSize = t.outputSize
 
+            self._timestamp = t.timestamp
+
         else:  # Revert the addition of the recent element [since EMA can't be undone]
             self._totalTuples -= 1
 
+            self._timestamp = t.prevTimestamp
             self._avgExecutionTime = t.prevAvgExecutionDuration
             self._avgDataSize = t.prevAvgDataSize
 
-    def getDisplayData(self):
+    def getDisplayData(self) -> Optional[Dict]:
         if not self._sendData:
             return None
 
-        return self.data.getDisplayData()
+        start = Timer.currentRealTime()
+
+        dd = self.data.getDisplayData()
+
+        end = Timer.currentRealTime()
+
+        if dd is not None:  # This does not contain raw JSON serialization duration which is performed in a batch later
+            dd["dFetch"] = (end - start) * 1000
+
+        return dd
 
     def getAvgExecutionTime(self):
         return self._avgExecutionTime
@@ -160,6 +166,9 @@ class OperatorMonitor:
 
     def getTotalTuples(self):
         return self._totalTuples
+
+    def getLastProcessTime(self):
+        return self._timestamp
 
     def getMonitor(self) -> PipelineMonitor:
         return self._monitor

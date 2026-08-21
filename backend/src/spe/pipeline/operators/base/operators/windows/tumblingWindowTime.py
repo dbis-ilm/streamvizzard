@@ -1,7 +1,6 @@
 import asyncio
-import json
-import threading
-from typing import Optional, List
+from asyncio import TimerHandle
+from typing import Optional, List, Dict
 
 from spe.common.timer import Timer
 from spe.pipeline.operators.base.dataTypes.window import Window
@@ -15,27 +14,23 @@ from spe.runtime.debugger.history.historyState import HistoryState
 from spe.common.tuple import Tuple
 
 
+# TODO: Check if we can support debugging
 class TumblingWindowTime(WindowOperator):
     def __init__(self, opID: int):
         super(TumblingWindowTime, self).__init__(opID, 1, 1, supportsDebugging=False)
 
         self.value = 0
 
-        self.buffer: List[Tuple] = list()
-        self.timer: Optional[threading.Timer] = None
+        self._buffer: List[Tuple] = list()
 
-    def setData(self, data: json):
+        self._event: Optional[TimerHandle] = None
+
+    def setData(self, data: Dict):
         self.value = float(data["value"])
 
-        # If pipeline is running, modify timer
+        # If pipeline is running, reschedule
         if self.isRunning():
-            if self.timer is not None:
-                self.timer.cancel()
-                self.timer = None
-
-            if self.value > 0:
-                self.timer = threading.Timer(self.value, self._distributeBuffer)  # This breaks the debugging, not possible in this case
-                self.timer.start()
+            self._scheduleWindow()
 
     def getData(self) -> dict:
         return {"value": self.value}
@@ -43,42 +38,44 @@ class TumblingWindowTime(WindowOperator):
     def onRuntimeCreate(self, eventLoop: asyncio.AbstractEventLoop):
         super(TumblingWindowTime, self).onRuntimeCreate(eventLoop)
 
-        if self.value > 0:
-            self.timer = threading.Timer(self.value, self._distributeBuffer)
-            self.timer.start()
+        self._scheduleWindow()
 
-    def _distributeBuffer(self):
-        # When the pipeline is paused this timer shouldn't trigger!
+    def _scheduleWindow(self):
+        # Cancel previous
+
+        if self._event is not None:
+            self._event.cancel()
+            self._event = None
+
+        self._event = self.getEventLoop().call_later(self.value, lambda: asyncio.ensure_future(self._triggerWindow(), loop=self.getEventLoop()))
+
+    async def _triggerWindow(self):
+        self._event = None
+
+        if not self.isRunning():
+            return
+
+        # When the pipeline is paused this timer shouldn't trigger! If we want support debugging, we must schedule window when debugging stops
         if self.isDebuggingEnabled() and self.getHistoryState() != HistoryState.INACTIVE:
             return
 
-        hasConnections = False
-        for o in self.outputs:
-            if o.hasConnections():
-                hasConnections = True
-                break
-
-        # In case op was disconnected or pipeline stopped
-        if not self.isRunning() or not hasConnections:
-            return
-
-        if len(self.buffer) > 0:
+        # Extremely lightweight operation, so we execute it on the event loop thread
+        if len(self._buffer) > 0:
             start = Timer.currentRealTime()
 
-            r = Window(self.buffer.copy())
-            self.buffer.clear()
-
-            tup = self.createTuple((r,))  # If debugging should be supported we need to create a DT manually for the res tuple
+            r = Window(self._buffer)
+            self._buffer = []
 
             exDur = Timer.currentRealTime() - start  # Actual processing time instead of "waitingTime" of window
 
-            asyncio.ensure_future(self._onTupleProcessed(tup, exDur), loop=self._eventLoop)
+            # If debugging should be supported we need to create a DT manually for the res tuple
 
-        self.timer = threading.Timer(self.value, self._distributeBuffer)
-        self.timer.start()
+            await self._onTupleProcessed(self.createTuple((r,)), exDur)
+
+        self._scheduleWindow()
 
     def _execute(self, tupleIn: Tuple) -> Optional[Tuple]:
-        self.buffer.append(tupleIn)
+        self._buffer.append(tupleIn)
 
         return None  # Distribution will be handled by timer
 

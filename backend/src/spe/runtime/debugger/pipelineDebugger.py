@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import threading
 from asyncio import CancelledError
 from typing import TYPE_CHECKING, Optional, Dict
 
 from network.socketTuple import GenericGetterSocketTuple, DebugStepGetterSocketTuple, HistoryBranchUpdateSocketTuple
+from spe.common.serialization.jsonSerialization import fastSerializeToJSONBytes
 from spe.runtime.debugger.bufferManager.historyBufferManager import HistoryBufferManager
 from spe.runtime.debugger.history.historyRewinder import HistoryRewinder
 from spe.runtime.debugger.history.historyState import HistoryState
@@ -31,6 +31,7 @@ class PipelineDebugger(RuntimeService):
         super().__init__(runtimeManager, serverManager)
 
         self._enabled = False
+        self._initialized = False
 
         # Reentrant Lock may be acquired multiple times by same thread (nested functions)
         self._historyLock = threading.RLock()
@@ -59,8 +60,7 @@ class PipelineDebugger(RuntimeService):
     # ----------------------------- INTERFACE -----------------------------
 
     def onPipelineStarting(self):
-        # Return if debugger is not enabled or already initialized
-        if not self._enabled or self._historyEvent is not None:
+        if not self._enabled:
             return
 
         self._pipelineHistory.initialize()
@@ -74,6 +74,8 @@ class PipelineDebugger(RuntimeService):
         self.runtimeManager.getEventLoop().call_soon_threadsafe(self._historyEvent.set)
 
         self._pipelineUpdateHandler.start(self.runtimeManager.getPipeline())
+
+        self._initialized = True
 
     def onPipelineStopping(self):
         # When the pipeline is ordered to shut down
@@ -115,6 +117,7 @@ class PipelineDebugger(RuntimeService):
         self._currentHESocketTuple = None
         self._currentHGUSocketTuple = None
 
+        self._initialized = False
         self._enabled = False
 
     def registerGlobalStep(self, step: DebugStep) -> int:
@@ -134,7 +137,8 @@ class PipelineDebugger(RuntimeService):
 
     def onDebugStepExecuted(self, step: DebugStep, undo: bool):
         if self._currentHESocketTuple is None:
-            self._currentHESocketTuple = DebugStepGetterSocketTuple(self._getCurrentHESocketData, self._onHESocketDataSent, step, undo)
+            self._currentHESocketTuple = DebugStepGetterSocketTuple(self._getCurrentHESocketData,
+                                                                    self._onHESocketDataSent, step, undo)
             self.serverManager.sendSocketData(self._currentHESocketTuple)
         else:
             self._currentHESocketTuple.step = step
@@ -227,7 +231,7 @@ class PipelineDebugger(RuntimeService):
             executed = self._provenanceInspector.queryFromTemplate(queryData)
 
         if not executed:
-            self.getServerManager().sendSocketData(json.dumps({"cmd": "provQueryRes", "data": None}))
+            self.getServerManager().sendSocketData(fastSerializeToJSONBytes({"cmd": "provQueryRes", "data": None}))
 
         return executed
 
@@ -239,7 +243,7 @@ class PipelineDebugger(RuntimeService):
                                                                   self._onGSSocketDataSent)
             self.serverManager.sendSocketData(self._currentGSSocketTuple)
 
-    def _getCurrentGSSocketData(self):
+    def _getCurrentGSSocketData(self) -> bytes | None:
         ls = self._pipelineHistory.getLastStepForCurrentBranch()
         fs = self._pipelineHistory.getFirstStepForCurrentBranch()
 
@@ -250,20 +254,20 @@ class PipelineDebugger(RuntimeService):
         if currentBranch is None:  # Closed TODO: BETTER SOLUTION FOR DETECTING IF STATE SHOULD BE SENT!
             return None
 
-        return json.dumps({"cmd": "debuggerData",
-                           "active": self._pipelineHistory.getHistoryState().isActive(),
-                           "maxSteps": self._pipelineHistory.getMaxStepsForCurrentBranch(),
-                           "stepID": cs.localID,
-                           "branchID": currentBranch.id,
-                           "stepTime": cs.time,
-                           "stepType": cs.type.name,
-                           "stepOp": cs.debugger.getOperator().id,
-                           "branchStepOffset": currentBranch.stepIDOffset,
-                           "memSize": self._historyBufferManager.getMainMemorySize(),
-                           "diskSize": self._historyBufferManager.getStorageMemorySize(),
-                           "branchStartTime": fs.time if fs is not None else 0,
-                           "branchEndTime": ls.time if ls is not None else 0
-                           })
+        return fastSerializeToJSONBytes({"cmd": "debuggerData",
+                                         "active": self._pipelineHistory.getHistoryState().isActive(),
+                                         "maxSteps": self._pipelineHistory.getMaxStepsForCurrentBranch(),
+                                         "stepID": cs.localID,
+                                         "branchID": currentBranch.id,
+                                         "stepTime": cs.time,
+                                         "stepType": cs.type.name,
+                                         "stepOp": cs.debugger.getOperator().id,
+                                         "branchStepOffset": currentBranch.stepIDOffset,
+                                         "memSize": self._historyBufferManager.getMainMemorySize(),
+                                         "diskSize": self._historyBufferManager.getStorageMemorySize(),
+                                         "branchStartTime": fs.time if fs is not None else 0,
+                                         "branchEndTime": ls.time if ls is not None else 0
+                                         })
 
     def _onGSSocketDataSent(self, tup):
         self._currentGSSocketTuple = None
@@ -326,7 +330,8 @@ class PipelineDebugger(RuntimeService):
         # Block until pipeline continuation is completed
 
         try:
-            asyncio.run_coroutine_threadsafe(self._continueExecution(), self.getRuntimeManager().getEventLoop()).result()
+            asyncio.run_coroutine_threadsafe(self._continueExecution(),
+                                             self.getRuntimeManager().getEventLoop()).result()
         except CancelledError:  # Pipeline stopped
             ...
 
@@ -347,17 +352,17 @@ class PipelineDebugger(RuntimeService):
         self._historyEvent.set()  # Allows operators to continue executing
 
     @staticmethod
-    def _getCurrentHESocketData(step: DebugStep, undo: bool):
+    def _getCurrentHESocketData(step: DebugStep, undo: bool) -> bytes:
         # If step is and undo step the time will not reflect the time of the currently active step
         # If undo the active step at the time of the execution is the current step - 1
 
-        return json.dumps({"cmd": "debuggerHistoryEx",
-                           "stepID": step.localID - (1 if undo else 0),
-                           "branchID": step.branchID,
-                           "op": step.debugTuple.debugger.getOperator().id,
-                           "undo": undo,
-                           "type": step.type.name,
-                           "stepTime": step.time})
+        return fastSerializeToJSONBytes({"cmd": "debuggerHistoryEx",
+                                         "stepID": step.localID - (1 if undo else 0),
+                                         "branchID": step.branchID,
+                                         "op": step.debugTuple.debugger.getOperator().id,
+                                         "undo": undo,
+                                         "type": step.type.name,
+                                         "stepTime": step.time})
 
     def _onHESocketDataSent(self, tup):
         self._currentHESocketTuple = None
@@ -378,13 +383,13 @@ class PipelineDebugger(RuntimeService):
         if self.getHistoryState() is HistoryState.INACTIVE:
             self._activateHistory(True)
 
-        self.serverManager.sendSocketData(json.dumps({"cmd": "triggerBP",
-                                                      "stepID": ds.localID,
-                                                      "branchID": ds.branchID,
-                                                      "op": ds.debugTuple.debugger.getOperator().id,
-                                                      "type": ds.type.name,
-                                                      "stepTime": ds.time,
-                                                      "bpId": bpId}))
+        self.serverManager.sendSocketData(fastSerializeToJSONBytes({"cmd": "triggerBP",
+                                                                    "stepID": ds.localID,
+                                                                    "branchID": ds.branchID,
+                                                                    "op": ds.debugTuple.debugger.getOperator().id,
+                                                                    "type": ds.type.name,
+                                                                    "stepTime": ds.time,
+                                                                    "bpId": bpId}))
 
     # ------------------------------ GETTER ------------------------------
 

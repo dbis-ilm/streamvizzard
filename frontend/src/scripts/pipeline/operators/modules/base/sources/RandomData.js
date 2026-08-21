@@ -6,7 +6,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _RandomData extends Definition {
     constructor(pathIdentifier){
-        super("RandomData", "Random Data", pathIdentifier, true);
+        super("RandomData", "Random Data", pathIdentifier,
+            "Emits randomly generated data containing a dictionary of {val1: float, val2: int, val3: string, val4: list[float]} for testing purposes.", true);
     }
 
     build(operator) {

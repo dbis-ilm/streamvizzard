@@ -1,5 +1,4 @@
-import json
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 from spe.pipeline.operators.operator import Operator
 from spe.runtime.compiler.definitions.compileDefinitions import CompileFramework, CompileComputeMode, CompileLanguage, \
@@ -17,7 +16,7 @@ class UDF(Operator):
         self.rawCode = ""
         self._executable = None
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
         self.rawCode = data["code"]
         self._executable = instantiateUserDefinedFunction(self, self.rawCode)
 

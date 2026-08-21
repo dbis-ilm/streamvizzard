@@ -113,7 +113,8 @@ __frameworks = [CompileFrameworkSpecs(CompileFramework.STREAMVIZZARD, StreamVizz
                                       [
                                           FrameworkConnectorCfg(CompileFrameworkConnector.APACHE_KAFKA, True, True,
                                                                 kafkaConnectorParams, None),
-                                      ], True, supportedCheck=_flinkSupportedCheck, placementAdvisor=PyFlinkFA)]
+                                      ], True, supportedCheck=_flinkSupportedCheck, placementAdvisor=PyFlinkFA),
+                ]
 
 
 def getSupportedFrameworks() -> List[CompileFrameworkSpecs]:

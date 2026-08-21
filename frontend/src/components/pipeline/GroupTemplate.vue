@@ -1,12 +1,11 @@
 <template>
-<div v-draggable="{dragStart: this._onDragStart, dragging: this._onDragging, dragEnd: this._onDragEnd}"
-     :class="['nodeGroup', $streamvizzard.monitor.isHeatmapActive() && 'heatmapActive', group.nodeAddHover && 'nodeAddHover']"
+<div v-draggable="{dragStart: this._onDragStart, dragging: this._onDragging, dragEnd: this._onDragEnd}" @contextmenu="_onContextMenu"
+     :class="['nodeGroup', $streamvizzard.monitor.heatmap.isActive() && 'heatmapActive', group.nodeAddHover && 'nodeAddHover']"
      :style="'transform: translate(' + group.x + 'px, ' + group.y + 'px); width: ' + group.width + 'px; height: '
      + group.height + 'px;' + (group.order != null ? ' z-index:' + group.order : '')">
   <div class="group">
     <div class="ctrlRow">
       <div style="height: 100%; padding-top: 1px;"><input ref="nameInput" type="text" :value="group.title" @change="_onNameChange($event)" class="nameInput editorInput limitedText editorNameInput"></div>
-      <div style="right: 2px; top: 0; position: absolute;"><i class="ctrlIcon bi bi-x-circle" title="Remove Group" @click="_onRemove()"></i></div>
     </div>
   </div>
 
@@ -33,10 +32,6 @@ export default {
   },
 
   methods: {
-    _onRemove() {
-      this.group.remove();
-    },
-
     _onNameChange(event) {
       let prev = this.group.title;
 
@@ -45,10 +40,17 @@ export default {
       executeEvent(EVENTS.GROUP_NAME_CHANGED, [this.group, prev]);
     },
 
+    _onContextMenu(e) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      this.$streamvizzard.editor.openGroupContextMenu(e.clientX, e.clientY, this.group);
+    },
+
     // ---------------------------------------------------- Dragging ---------------------------------------------------
 
     _onDragStart() {
-      this.$streamvizzard.editor.selectOperator(null);
+      this.$streamvizzard.editor.selectEditorObject(null);
 
       this.group.selectGroup();
 
@@ -72,6 +74,8 @@ export default {
         // Need to rely on drag anchor to escape snapping
         let snappedPos = this.$streamvizzard.editor.calculateGroupSnapping(this.group);
         if(snappedPos != null) this.group.moveGroup(snappedPos.x, snappedPos.y);
+
+        executeEvent(EVENTS.GROUP_INTERACTED, [this.group, INTERACTION.DRAGGING]);
       })
     },
 
@@ -136,7 +140,7 @@ export default {
   font-size: var(--node-title-font-size);
   height: 1.25em;
 
-  width:calc(100% - 50px);
+  width:calc(100% - 25px);
 }
 
 </style>

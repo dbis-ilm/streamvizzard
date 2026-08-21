@@ -8,7 +8,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _AnomalyDetection extends Definition {
     constructor(pathIdentifier){
-        super("AnomalyDetection", "Anomaly Detection", pathIdentifier);
+        super("AnomalyDetection", "Anomaly Detection", pathIdentifier,
+            "Detects anomalies in the input data (list of numerical elements) and potentially resolves them.");
     }
 
     build(operator) {

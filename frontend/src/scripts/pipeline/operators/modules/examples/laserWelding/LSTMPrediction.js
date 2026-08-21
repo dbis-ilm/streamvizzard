@@ -7,7 +7,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _LSTMPrediction extends Definition {
     constructor(pathIdentifier){
-        super("LSTMPredictionSL", "LSTM Prediction", pathIdentifier);
+        super("LSTMPredictionSL", "LSTM Prediction", pathIdentifier,
+            "Predicts the laser-welding seam break based on inductive probe sensors.");
     }
 
     build(operator) {

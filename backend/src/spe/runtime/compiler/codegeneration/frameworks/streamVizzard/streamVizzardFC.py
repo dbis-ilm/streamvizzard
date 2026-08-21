@@ -34,7 +34,7 @@ class StreamVizzardFC(FrameworkCompiler):
                 pipeline.registerConnection(con)
 
         if (errorMsg := pipeline.validate()) is not None:
-            return CompilerRes(f"Couldn't generate StreamVizzard pipeline!\n {errorMsg}")
+            return CompilerRes.error(f"Couldn't generate StreamVizzard pipeline!\n {errorMsg}")
 
         from spe.pipeline.pipelineManager import PipelineManager
         pipelineUISaveFile = PipelineManager.generateUISaveFile(pipeline)
@@ -50,7 +50,7 @@ class StreamVizzardFC(FrameworkCompiler):
         except Exception:
             logging.log(logging.ERROR, traceback.format_exc())
 
-            return CompilerRes("Failed to save pipeline UI file!")
+            return CompilerRes.error("Failed to save pipeline UI file!")
 
         # Write README
 
@@ -65,7 +65,7 @@ class StreamVizzardFC(FrameworkCompiler):
         except Exception:
             logging.log(logging.ERROR, traceback.format_exc())
 
-            return CompilerRes("Failed to save readme file!")
+            return CompilerRes.error("Failed to save readme file!")
 
         return CompilerRes.ok()
 

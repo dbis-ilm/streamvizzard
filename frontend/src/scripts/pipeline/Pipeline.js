@@ -19,7 +19,7 @@ export class Pipeline {
         /** @type {Map<number, SvOperator>}**/
         this._operatorLookup = new Map();
 
-        this._uniqueOperatorIDCounter = 0;
+        this._uniqueOperatorIDCounter = 1;
 
         // Connections
 
@@ -28,7 +28,7 @@ export class Pipeline {
         /** @type {Map<number, SvConnection>}**/
         this._connectionLookup = new Map(); // Non-reactive
 
-        this._uniqueConnectionIDCounter = 0;
+        this._uniqueConnectionIDCounter = 1;
 
         // Groups
 
@@ -37,7 +37,7 @@ export class Pipeline {
         /** @type {Map<number, Group>}**/
         this._groupLookup = new Map();
 
-        this._uniqueGroupIDCounter = 0;
+        this._uniqueGroupIDCounter = 1;
 
         // ---
 
@@ -66,6 +66,10 @@ export class Pipeline {
 
         this.groups = [];
         this._groupLookup.clear();
+
+        this._uniqueOperatorIDCounter = 1;
+        this._uniqueGroupIDCounter = 1;
+        this._uniqueConnectionIDCounter = 1;
 
         this.errorMsg = null;
 
@@ -171,7 +175,7 @@ export class Pipeline {
         this._operatorLookup.delete(operator.id);
         this.operators.splice(this.operators.indexOf(op), 1);
 
-        if(SvInstance.editor.selectedOperator === op) SvInstance.editor.selectOperator(null);
+        if(SvInstance.editor.selectedOperator === op) SvInstance.editor.selectEditorObject(null);
 
         executeEvent(EVENTS.OP_REMOVED, op);
 
@@ -334,29 +338,41 @@ export class Pipeline {
 
     _initializeGroups() {
         registerEvent(EVENTS.OP_INTERACTED, (op, interaction) => {
-            if(op.group != null) return;
+            // If any op in the selection already has a group, we skip
+
+            for(let obj of SvInstance.editor.focusedObjects) {
+                if(obj instanceof SvOperator && obj.group != null) return;
+            }
 
             if(interaction === INTERACTION.DRAGGING) {
-                // During dragging, check which group we are hovering and mark it
+                // During dragging, check which group we (our selection) are hovering and mark it
 
                 let hoverGroup = null;
 
                 for(let group of this.groups.values()) {
                     group.nodeAddHover = false;
 
-                    if(hoverGroup == null && group.intersectsOp(op)) hoverGroup = group;
+                    if(hoverGroup == null) {
+                        for(let obj of SvInstance.editor.focusedObjects) {
+                            if(obj instanceof SvOperator && group.intersectsOp(obj)) {
+                                hoverGroup = group;
+
+                                break;
+                            }
+                        }
+                    }
                 }
 
                 if(hoverGroup != null) hoverGroup.nodeAddHover = true;
 
             } else if(interaction === INTERACTION.DRAG_END) {
-                // After node finishes dragging, check if node is now part of a group
+                // After node finishes dragging, add selection to hovered group
 
                 for(let group of this.groups.values()) {
-                    if(group !== op.group && group.intersectsOp(op)) {
-                        group.addOperator(op);
+                    if(!group.nodeAddHover) continue;
 
-                        break;
+                    for(let obj of SvInstance.editor.focusedObjects) {
+                        if (obj instanceof SvOperator) group.addOperator(obj);
                     }
                 }
 
@@ -385,9 +401,10 @@ export class Pipeline {
     }
 
     /** @param {SvOperator|null} initialOp
-     * @param {Number|id} id **/
+     * @param {Number|id} id
+     * @returns {Group | null} **/
     createGroup(initialOp=null, id=null) {
-        if(id != null && this.getGroupById(id) != null) return; // Already exists
+        if(id != null && this.getGroupById(id) != null) return null; // Already exists
         if(initialOp != null && initialOp.group != null) return null; // Already in group
 
         let newID = id != null ? id : this._uniqueGroupIDCounter;

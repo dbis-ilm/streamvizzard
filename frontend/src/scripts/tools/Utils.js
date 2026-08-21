@@ -36,6 +36,32 @@ export function clamp(val, min, max) {
     return Math.min(Math.max(val, min), max);
 }
 
+export function debounce(fn, delay) {
+    let t;
+    let pending = false;
+
+    function wrapper(...args) {
+        pending = true;
+
+        clearTimeout(t);
+        t = setTimeout(() => {
+            pending = false;
+            fn.apply(this, args);
+        }, delay);
+    }
+
+    wrapper.isPending = () => pending;
+
+    wrapper.cancel = () => {
+        if(pending) {
+            clearTimeout(t);
+            pending = false;
+        }
+    };
+
+    return wrapper;
+}
+
 export function makeGenericResizable(jqElement, onResize = null, autoHide = false, handles = null) {
     Vue.nextTick(function() {
         jqElement.resizable({
@@ -160,4 +186,37 @@ export function getOperatorBoundingBox(ops, margin = 0) {
         centerX: (left + right) / 2,
         centerY: (top + bottom) / 2,
     };
+}
+
+/** Checks if two bounding boxes overlap
+ * @param {number} left1
+ * @param {number} top1
+ * @param {number} right1
+ * @param {number} bottom1
+ * @param {number} left2
+ * @param {number} top2
+ * @param {number} right2
+ * @param {number} bottom2 **/
+export function intersects(left1, top1, right1, bottom1, left2, top2, right2, bottom2) {
+    return !(
+        left1 > right2 ||
+        right1 < left2 ||
+        top1 > bottom2 ||
+        bottom1 < top2
+    );
+}
+
+/** @param {number} left
+ * @param {number} top
+ * @param {number} right
+ * @param {number} bottom
+ * @param {Number} x
+ * @param {Number} y */
+export function containsPoint(left, top, right, bottom, x, y) {
+    return (
+        x >= left &&
+        x <= right &&
+        y >= top &&
+        y <= bottom
+    );
 }

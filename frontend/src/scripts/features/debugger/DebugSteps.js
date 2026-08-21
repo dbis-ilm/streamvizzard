@@ -38,10 +38,6 @@ export class DebugStep {
         this.type = type;
         this.stepTime = stepTime;
     }
-
-    getUniqueKey() {
-        return this.branchID + "_" + this.stepID;
-    }
 }
 
 export class DebugStepExecution {
@@ -50,9 +46,5 @@ export class DebugStepExecution {
     constructor(step, undo) {
         this.step = step;
         this.undo = undo; // null=normal execution, no undo/redo
-    }
-
-    getUniqueKey() {
-        return this.step.getUniqueKey() + "_" + (this.undo != null ? (this.undo ? "u" : "r") : "e");
     }
 }

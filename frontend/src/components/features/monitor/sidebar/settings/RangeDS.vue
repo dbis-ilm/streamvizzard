@@ -20,7 +20,10 @@ export default {
 
   methods: {
     onChange() {
-      this.value = [this.val1 != null ? parseFloat(this.val1) : null, this.val2 != null ? parseFloat(this.val2) : null];
+      let left = parseFloat(this.val1);
+      let right = parseFloat(this.val2);
+
+      this.value = [Number.isFinite(left) ? left : null, Number.isFinite(right) ? right : null];
 
       this.change(this.skey, this.value);
     },

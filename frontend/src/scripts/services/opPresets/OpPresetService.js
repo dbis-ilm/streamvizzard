@@ -38,9 +38,7 @@ export class OpPresetService extends Service {
     /** @param {OperatorPreset} preset
      * @returns {Promise<OperatorPreset|null>} */
     async storePreset(preset) {
-        let res = await Services.Network.storeOperator(preset);
-
-        if(res) {
+        return await Services.Network.storeOperator(preset).then(() => {
             this.presets = this.presets.filter(p => p.name !== preset.name);
             this.presets.unshift(preset);
 
@@ -49,25 +47,19 @@ export class OpPresetService extends Service {
             if(this.onPresetsChangeCb != null) this.onPresetsChangeCb(this.presets);
 
             return preset;
-        }
-
-        return null;
+        }).catch(() => { return null; });
     }
 
     /** @param {String} name
      * @returns {Promise<Boolean>} */
     async deletePreset(name) {
-        let res = await Services.Network.deleteStoredOperator(name);
-
-        if(res) {
+        return await Services.Network.deleteStoredOperator({"name": name}).then(() => {
             this.presets = this.presets.filter(p => p.name !== name);
 
             if(this.onPresetsChangeCb != null) this.onPresetsChangeCb(this.presets);
 
             return true;
-        }
-
-        return false;
+        }).catch(() => { return false; });
     }
 
     /** @param {OperatorPreset} preset

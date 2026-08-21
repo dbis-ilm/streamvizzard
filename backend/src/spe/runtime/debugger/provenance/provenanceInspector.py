@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import threading
 import traceback
@@ -17,6 +16,7 @@ from provinspector.storage.adapter import Neo4JAdapter
 from provinspector.storage.database import ProvGraphDatabase
 from provinspector.utils.dumper import JsonDumper
 
+from spe.common.serialization.jsonSerialization import fastSerializeToJSONBytes
 from spe.runtime.debugger.provenance.provQueryParser import ProvQueryParser
 from spe.common.timer import Timer
 from streamVizzard import StreamVizzard
@@ -221,7 +221,7 @@ class ProvenanceInspector:
 
     def _queryThreadFunc(self, inputData) -> Optional[Dict]:
         def returnError():
-            self._debugger.getServerManager().sendSocketData(json.dumps({"cmd": "provQueryRes", "data": None}))
+            self._debugger.getServerManager().sendSocketData(fastSerializeToJSONBytes({"cmd": "provQueryRes", "data": None}))
 
         queryTemplate = ProvQueryParser.createQueryTemplate(inputData)
 
@@ -237,7 +237,7 @@ class ProvenanceInspector:
 
         extractedResult = queryTemplate.extractResult(self, res)
 
-        self._debugger.getServerManager().sendSocketData(json.dumps({"cmd": "provQueryRes", "data": extractedResult}))
+        self._debugger.getServerManager().sendSocketData(fastSerializeToJSONBytes({"cmd": "provQueryRes", "data": extractedResult}))
 
         self._queryThread = None
 

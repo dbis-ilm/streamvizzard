@@ -30,6 +30,20 @@ export default {
     }
   },
 
+  provide() {
+    return {
+      performTrackedRender: (renderCb) => {
+        // Called for each displayData change (watcher).
+
+        let start = performance.now();
+
+        renderCb();
+
+        this.operator.monitor.executionStats.updateRenderTime(performance.now() - start);
+      }
+    }
+  },
+
   computed: {
     displayModeSettings() {
       if(this.operator.monitor.displayMode == null) return {};

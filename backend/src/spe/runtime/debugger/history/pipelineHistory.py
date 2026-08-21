@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import json
 from collections import deque
 from typing import TYPE_CHECKING, Optional, Dict, List, Set, Deque, Callable, Tuple
 
+from spe.common.serialization.jsonSerialization import fastSerializeToJSONBytes
 from spe.runtime.debugger.debugStep import DebugStep, DebugStepType
 from spe.runtime.debugger.history.historyState import HistoryState
 from spe.runtime.debugger.history.pipelineHistoryBranch import PipelineHistoryBranch
@@ -58,7 +58,7 @@ class PipelineHistory:
 
         if targetBranch is None:
             printWarning("Target branch " + str(branchID) + " not found!")
-            return None
+            return
 
         if targetBranch != self._currentBranch:
             self._switchBranch(targetBranch)
@@ -126,11 +126,11 @@ class PipelineHistory:
 
             splitHistory = True
 
-            self._debugger.getServerManager().sendSocketData(json.dumps({"cmd": "debSplit",
-                                                                         "branchID": self._currentBranch.id,
-                                                                         "parentID": self._currentBranch.parentBranch.id,
-                                                                         "splitTime": splitStep.time,
-                                                                         "splitStep": splitStepID}))
+            self._debugger.getServerManager().sendSocketData(fastSerializeToJSONBytes({"cmd": "debSplit",
+                                                                                       "branchID": self._currentBranch.id,
+                                                                                       "parentID": self._currentBranch.parentBranch.id,
+                                                                                       "splitTime": splitStep.time,
+                                                                                       "splitStep": splitStepID}))
 
         self._historyState = HistoryState.INACTIVE
 
@@ -196,7 +196,8 @@ class PipelineHistory:
         return foundSteps
 
     def findLastStepOfTypes(self, opID: int, stepTypes: List[DebugStepType], searchParents: bool = True,
-                            startStep: Optional[int] = None) -> Tuple[Dict[DebugStepType, DebugStep], Optional[DebugStep]]:
+                            startStep: Optional[int] = None) -> Tuple[
+        Dict[DebugStepType, DebugStep], Optional[DebugStep]]:
         foundSteps: Dict[DebugStepType, DebugStep] = dict()
         openSteps: Set[DebugStepType] = set(stepTypes)
 
@@ -346,7 +347,8 @@ class PipelineHistory:
                 continue
 
             if branch == self._currentBranch.parentBranch:  # Branch is parent of current branch
-                self._reachBranchStep(-1, True)  # Traverse the current branch back to the beginning, also undo very first step
+                self._reachBranchStep(-1,
+                                      True)  # Traverse the current branch back to the beginning, also undo very first step
 
                 self._currentStepID = branch.getSplitStepIDForChild(self._currentBranch)
             else:  # Branch is child of current branch
@@ -389,6 +391,8 @@ class PipelineHistory:
 
                     if neighbour == targetBranch:
                         return newPath
+
+        return []
 
     def _createBranchSplit(self) -> PipelineHistoryBranch:
         parentBranch = self._currentBranch

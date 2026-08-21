@@ -155,9 +155,10 @@ export default {
 
       SvInstance.pipeline.setPipelineStatus(PIPELINE_STATUS.STARTING);
 
-      Services.Network.simulate(SvInstance.getRuntimeConfig(), simulateData).then((res) => {
-        if((res === null || !res["res"]) && SvInstance.pipeline.isPipelineStarting()) SvInstance.pipeline.setPipelineStatus(PIPELINE_STATUS.STOPPED);
-        //TODO: Could show error (res["error"]) here
+      Services.Network.simulate(SvInstance.getRuntimeConfig(), simulateData).catch((res) => {
+        if(SvInstance.pipeline.isPipelineStarting()) SvInstance.pipeline.setPipelineStatus(PIPELINE_STATUS.STOPPED);
+
+        this.$streamvizzard.pipeline.errorMsg = res?.error;
       });
     },
 

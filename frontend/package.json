@@ -1,6 +1,6 @@
 {
   "name": "streamvizzard_frontend",
-  "version": "0.9.6",
+  "version": "0.9.9",
   "private": true,
   "scripts": {
     "serve": "vue-cli-service serve",
@@ -21,7 +21,7 @@
     "elkjs": "^0.9.3",
     "jquery": "~3.7.1",
     "jquery-ui": "^1.13.2",
-    "plotly.js-dist": "2.32.0",
+    "plotly.js-dist": "3.6.0",
     "regenerator-runtime": "^0.14.1",
     "uuid": "^9.0.0",
     "vue": "2.6.14",

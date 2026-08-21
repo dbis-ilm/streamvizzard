@@ -5,7 +5,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _ImgMerge extends Definition {
     constructor(pathIdentifier) {
-        super("ImgMerge", "Img Merge", pathIdentifier);
+        super("ImgMerge", "Img Merge", pathIdentifier,
+            "Merges the individual colors channels into one combined image.");
     }
 
     build(operator) {

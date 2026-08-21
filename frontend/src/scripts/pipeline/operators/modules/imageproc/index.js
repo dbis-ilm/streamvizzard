@@ -48,7 +48,7 @@ IMG_DT.registerDisplayMode(new MonitorDisplayMode(2, "Histogram", DT_Scatterplot
         {"line": {"color": "rgb(255, 0, 0)", "width": 1}}]}));
 
 export const ARRAY_IMG_DT = new MonitorDataType("ARRAY_IMG", "Img Array");
-ARRAY_IMG_DT.registerDisplayMode(new MonitorDisplayMode(0, "Count", DT_Literal));
+ARRAY_IMG_DT.registerDisplayMode(new MonitorDisplayMode(0, "Count", DT_Literal, {"exp": "'Array [' + $VAL + ' Images]'"}));
 ARRAY_IMG_DT.registerDisplayMode(new MonitorDisplayMode(1, "Delta", DT_Image));
 ARRAY_IMG_DT.registerDisplayMode(new MonitorDisplayMode(2, "Sum", DT_Image));
 

@@ -221,6 +221,5 @@ class Source(Operator, ABC):
         if self._produceEvent is not None:
             # Resume stopped tasks so that they can shut down gracefully
             loop.call_soon_threadsafe(self._produceEvent.set)
-            self._produceEvent = None
 
         self._dataQueue.clear()

@@ -7,7 +7,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _KafkaSink extends Definition {
     constructor(pathIdentifier){
-        super("KafkaSink", "Kafka Sink", pathIdentifier);
+        super("KafkaSink", "Kafka Sink", pathIdentifier,
+            "Sends the input data to a Kafka broker.");
     }
 
     build(operator) {

@@ -178,44 +178,6 @@ export class OperatorChangeAction extends OperatorAction {
     }
 }
 
-export class DragOperatorCA extends OperatorChangeAction {
-    /** @param {SvOperator} op
-     * @param {Object} prev **/
-    constructor(op, prev) {
-        super(op);
-
-        this.prev = [prev.x, prev.y];
-        this.new = [op.posX, op.posY];
-    }
-
-    isUIEvent() { return true; }
-
-    setPos(newX, newY) {
-        let op = SvInstance.pipeline.getOperatorByID(this.opID);
-        if(op == null) return false;
-
-        let prevX = op.posX;
-        let prevY = op.posY;
-
-        op.moveTo(newX, newY); // No need to trigger drag since groups will receive their own events (memberships)
-
-        return op.posX !== prevX || op.posY !== prevY;
-    }
-
-    async undo() {
-        return this.setPos(this.prev[0], this.prev[1]);
-    }
-
-    async redo() {
-        return this.setPos(this.new[0], this.new[1]);
-    }
-
-    /** @param {SvOperator} op **/
-    update(op) {
-        this.new = [op.posX, op.posY];
-    }
-}
-
 export class OperatorResizeCA extends OperatorChangeAction {
     /** @param {SvOperator} op
      *  @param {any} prev **/

@@ -5,7 +5,10 @@ import warnings
 from typing import Dict, Any, Optional
 
 
-def remap(val, sourceFrom, sourceTo, targetFrom, targetTo):
+def remap(val, sourceFrom, sourceTo, targetFrom, targetTo, clamped: bool = False):
+    if clamped:
+        val = max(min(val, sourceTo), sourceFrom)  # Clamp val first
+
     return (val - sourceFrom) / (sourceTo - sourceFrom) * (targetTo - targetFrom) + targetFrom
 
 
@@ -13,14 +16,20 @@ def clamp(val, minV, maxV):
     return max(minV, min(val, maxV))
 
 
-def tryParseInt(value: str, default) -> int:
+def tryParseInt(value: str, default: int = 0) -> int:
+    if value is None:
+        return default
+
     try:
         return int(value)
     except (ValueError, TypeError):
         return default
 
 
-def tryParseFloat(value: str, default) -> float:
+def tryParseFloat(value: str, default: float = 0) -> float:
+    if value is None:
+        return default
+
     try:
         return float(value)
     except (ValueError, TypeError):

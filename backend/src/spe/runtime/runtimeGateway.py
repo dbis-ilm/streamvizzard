@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import json
 from typing import Optional, List
 from typing import TYPE_CHECKING
 
 from spe.common.runtimeService import RuntimeService
+from spe.common.serialization.jsonSerialization import fastSerializeToJSONBytes
 from streamVizzard import StreamVizzard
 
 if TYPE_CHECKING:
@@ -52,13 +52,13 @@ class RuntimeGateway:
         _instance = self
 
     def onPipelineStarting(self):
-        self._serverManager.sendSocketData(json.dumps({"cmd": "status", "status": "starting"}))
+        self._serverManager.sendSocketData(fastSerializeToJSONBytes({"cmd": "status", "status": "starting"}))
 
         for service in self._services:
             service.onPipelineStarting()
 
     def onPipelineStarted(self):
-        self._serverManager.sendSocketData(json.dumps({"cmd": "status", "status": "started"}))
+        self._serverManager.sendSocketData(fastSerializeToJSONBytes({"cmd": "status", "status": "started"}))
 
     def onPipelineStopping(self):
         for service in self._services:
@@ -66,14 +66,14 @@ class RuntimeGateway:
 
         self._serverManager.clearSocketData()
 
-        self._serverManager.sendSocketData(json.dumps({"cmd": "status", "status": "stopping"}))
+        self._serverManager.sendSocketData(fastSerializeToJSONBytes({"cmd": "status", "status": "stopping"}))
 
     def onPipelineStopped(self):
         for service in self._services:
             service.onPipelineStopped()
 
         from network.socketTuple import GenericSocketTuple
-        self._serverManager.sendSocketData(GenericSocketTuple(json.dumps({"cmd": "status", "status": "stopped"}), lambda t: self._serverManager.clearSocketData()))
+        self._serverManager.sendSocketData(GenericSocketTuple(fastSerializeToJSONBytes({"cmd": "status", "status": "stopped"}), lambda t: self._serverManager.clearSocketData()))
 
     def onRuntimeShutdown(self):
         for service in self._services:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Dict, TYPE_CHECKING, Optional, List
 
 from spe.runtime.compiler.compilerRes import CompilerRes
@@ -39,12 +40,12 @@ class CodeGenerator:
         # Create connections between cluster
 
         if not self._createClusterConnections():
-            return self._finalizeGeneration(CompilerRes("Failed to create cluster connections!"))
+            return self._finalizeGeneration(CompilerRes.error("Failed to create cluster connections!"))
 
         # Merge cluster together if possible (same framework) -> minimize overhead by the frameworks
 
         if self._mergeCluster and not self._tryClusterMerge():
-            return self._finalizeGeneration(CompilerRes("Failed to merge clusters!"))
+            return self._finalizeGeneration(CompilerRes.error("Failed to merge clusters!"))
 
         # Generate the code
 
@@ -56,7 +57,7 @@ class CodeGenerator:
             if genRes.hasError():
                 return self._finalizeGeneration(genRes)
 
-        return self._finalizeGeneration(CompilerRes.ok(self.getOutputPath()))
+        return self._finalizeGeneration(CompilerRes.okWithRes(json.dumps({"output": self.getOutputPath()})))
 
     def _finalizeGeneration(self, result: CompilerRes) -> CompilerRes:
         if result.hasError():

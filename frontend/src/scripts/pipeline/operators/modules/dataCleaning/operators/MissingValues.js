@@ -6,7 +6,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _MissingValues extends Definition {
     constructor(pathIdentifier){
-        super("MissingValues", "Missing Values", pathIdentifier);
+        super("MissingValues", "Missing Values", pathIdentifier,
+            "Detects missing values in the input data (list of numerical elements) and potentially resolves them.");
     }
 
     build(operator) {

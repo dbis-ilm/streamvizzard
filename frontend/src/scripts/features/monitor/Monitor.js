@@ -1,17 +1,16 @@
 import {safeVal} from "@/scripts/tools/Utils";
-import {EVENTS, registerEvent} from "@/scripts/tools/EventHandler";
 import {Services} from "@/scripts/services/Services";
 import {initializeConnectionMonitor} from "@/scripts/features/monitor/ConnectionMonitor";
 import {initializeOpMonitor} from "@/scripts/features/monitor/OperatorMonitor";
 import {SvInstance} from "@/scripts/StreamVizzard";
+import {Heatmap} from "@/scripts/features/monitor/Heatmap";
 
 export class Monitor {
     constructor() {
         this.enabled = true;
         this.trackStats = false;
 
-        this.heatmapType = 0; // Not exported
-        this.heatmapData = null; // Not exported
+        this.heatmap = new Heatmap();
 
         // Show (open) advisor panel on sidebar
         this.showSidebar = true;
@@ -21,8 +20,6 @@ export class Monitor {
     }
 
     initialize() {
-        registerEvent(EVENTS.PIPELINE_CLEARED, () => { this.heatmapType = 0; });
-
         initializeConnectionMonitor();
         initializeOpMonitor();
 
@@ -33,22 +30,6 @@ export class Monitor {
         );
     }
 
-    showHeatmap(type, resetOnSwitch=true) {
-        // Reset data if type was switched (and desired)
-
-        if(type !== this.heatmapType && resetOnSwitch) {
-            this.heatmapData = null;
-
-            for(let op of SvInstance.pipeline.operators) op.monitor.heatmapRating = 0;
-        }
-
-        this.heatmapType = type;
-    }
-
-    isHeatmapActive() {
-        return this.heatmapType > 0;
-    }
-
     // ----------------------------------------------- Backend Reactivity ----------------------------------------------
 
     onConfigChanged() {
@@ -57,7 +38,7 @@ export class Monitor {
 
     getConfigChangeListeners() {
         // Defines reactive config values to listen for changes and call onConfigChanged
-        return [this.enabled, this.trackStats, this.heatmapType];
+        return [this.enabled, this.trackStats];
     }
 
     // -----------------------------------------------------------------------------------------------------------------
@@ -66,7 +47,6 @@ export class Monitor {
         return {
             "enabled": this.enabled,
             "trackStats": this.trackStats,
-            "heatmapType": this.heatmapType,
         };
     }
 
@@ -89,11 +69,4 @@ export class Monitor {
         this.sideBarStatMode = safeVal(data["sideBarStatMode"]);
         this.trackStats = safeVal(data["trackStats"], this.trackStats);
     }
-}
-
-export const HEATMAP  = {
-    NONE: 0,
-    COMPILE: 1,
-    DATA_SIZE: 2,
-    EXECUTION_TIME: 3,
 }

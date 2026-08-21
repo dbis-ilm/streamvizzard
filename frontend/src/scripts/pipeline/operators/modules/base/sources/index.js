@@ -2,7 +2,7 @@ import TextFile from "@/scripts/pipeline/operators/modules/base/sources/TextFile
 import HTTPGet from "@/scripts/pipeline/operators/modules/base/sources/HTTPGet";
 import ReadFolder from "@/scripts/pipeline/operators/modules/base/sources/ReadFolder";
 import SocketServer from "@/scripts/pipeline/operators/modules/base/sources/SocketServer";
-import SocketTextServer from "@/scripts/pipeline/operators/modules/base/sources/SocketTextSSource";
+import SocketTextServer from "@/scripts/pipeline/operators/modules/base/sources/TextSocketServer";
 import UDS from "@/scripts/pipeline/operators/modules/base/sources/UDS";
 import KafkaSource from "@/scripts/pipeline/operators/modules/base/sources/KafkaSource";
 import RandomData from "@/scripts/pipeline/operators/modules/base/sources/RandomData";

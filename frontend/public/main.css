@@ -209,7 +209,7 @@ input, textarea {
     border-radius: var(--button-border-radius);
 }
 
-/** TODO: Merge/Streamline editorInput and formInput (other other sub-styles such as dm settings, ...) style! */
+/** TODO: Merge/Streamline editorInput and formInput (other other sub-styles such as dm settings, CreateOpMenu.vue...) style! */
 
 input.editorInput, textarea.editorInput {
     outline: none;
@@ -413,23 +413,31 @@ input.formInputField {
     border-right: 2px solid var(--main-border-color);
 }
 
-.dock .openCloseButton.opened.left {
-    right: -16px;
+.dock.left {
+    padding-right: 16px;
+}
+
+.dock.right {
+    padding-left: 16px;
+}
+
+.dock.left .openCloseButton.opened {
+    right: -2px;
     background: linear-gradient(90deg, var(--second-bg-color) 0%, rgb(200, 200, 200) 300%);
 }
 
-.dock .openCloseButton.opened.right {
-    left: -20px;
+.dock.right .openCloseButton.opened {
+    left: -2px;
     background: linear-gradient(-90deg, var(--second-bg-color) 0%, rgb(200, 200, 200) 300%);
 }
 
-.dock .openCloseButton.closed.left {
-    right: -18px;
+.dock.left .openCloseButton.closed {
+    right: -2px;
     background: linear-gradient(-90deg, var(--second-bg-color) 0%, rgb(200, 200, 200) 100%);
 }
 
-.dock .openCloseButton.closed.right {
-    left: -18px;
+.dock.right .openCloseButton.closed {
+    left: -2px;
     background: linear-gradient(90deg, var(--second-bg-color) 0%, rgb(200, 200, 200) 100%);
 }
 
@@ -522,6 +530,12 @@ input.formInputField {
 
 .v-select .vs__selected {
     background-color: var(--second-bg-color);
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    display:flow-root;
+    text-overflow: ellipsis;
+    text-align: left;
 }
 
 .v-select:not(.vs--multiple) .vs__selected {
@@ -529,13 +543,28 @@ input.formInputField {
 }
 
 .v-select {
-    display: grid;
+    display: flex;
     box-sizing: content-box !important;
+}
+
+.v-select > div {
+    flex: 1;
+    min-width: 0;
+}
+
+.v-select .vs__selected-options {
+    min-width: 0; /* Fix against flex's auto min-width */
+}
+
+.v-select #vs1__listbox > li {
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 /** Hide caret **/
 .v-select .vs__search {
     caret-color: transparent;
+    pointer-events: none;
 }
 
 .v-select .vs__dropdown-option--highlight {

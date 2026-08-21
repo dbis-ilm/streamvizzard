@@ -1,15 +1,16 @@
-import json
-from typing import Optional
+from typing import Optional, Dict
 
 import cv2
 import numpy as np
 from numpy import uint8
 
-from spe.pipeline.operators.imageProc.dataTypes.image import Image
+from spe.pipeline.operators.imageProc.dataTypes.image import Image, ImageType
 from spe.pipeline.operators.operator import Operator
 from spe.common.tuple import Tuple
+from utils.utils import tryParseInt, tryParseFloat
 
 
+@Operator.requiresInput(ImageType())
 class FindContours(Operator):
     """
     Inputs: 1
@@ -27,9 +28,9 @@ class FindContours(Operator):
 
         self.drawContourThickness = 1
 
-    def setData(self, data: json):
-        self.drawContourThickness = data["drawThickness"]
-        self.modeRaw = data["mode"]
+    def setData(self, data: Dict):
+        self.drawContourThickness = tryParseFloat(data["drawThickness"], 0)
+        self.modeRaw = tryParseInt(data["mode"])
 
         if self.modeRaw == 0:
             self.mode = cv2.RETR_LIST
@@ -42,7 +43,7 @@ class FindContours(Operator):
         elif self.modeRaw == 4:
             self.mode = cv2.RETR_FLOODFILL
 
-        self.methodRaw = data["method"]
+        self.methodRaw = tryParseInt(data["method"])
 
         if self.methodRaw == 0:
             self.method = cv2.CHAIN_APPROX_NONE
@@ -57,11 +58,11 @@ class FindContours(Operator):
         return {"method": self.methodRaw, "mode": self.modeRaw, "drawThickness": self.drawContourThickness}
 
     def _execute(self, tupleIn: Tuple) -> Optional[Tuple]:
-        mat = tupleIn.data[0].mat
+        img: Image = tupleIn.data[0]
 
-        contours, hierarchy = cv2.findContours(mat, self.mode, self.method)
+        contours, hierarchy = cv2.findContours(img.mat, self.mode, self.method)
 
-        mat = np.zeros(mat.shape, dtype=uint8)
+        mat = np.zeros(img.mat.shape, dtype=uint8)
         cv2.drawContours(image=mat, contours=contours,
                          contourIdx=-1, thickness=self.drawContourThickness,
                          color=(255, 255, 255))

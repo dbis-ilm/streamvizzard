@@ -1,6 +1,6 @@
-# StreamVizzard v0.9.6
+# StreamVizzard v0.9.9
 
-StreamVizzard ist an interactive and explorative stream processing editor 
+StreamVizzard is an interactive and explorative stream processing editor 
 written in Python, designed to simplify the pipeline development process. 
 The system is divided into a [Frontend](frontend/readme.md), that is responsible for user interaction
 and visualization, and a [Backend](backend/readme.md), that brings its own custom stream processing engine

@@ -1,19 +1,17 @@
 from __future__ import annotations
 
-import json
 from typing import Dict, List
 from typing import TYPE_CHECKING
 
-from spe.common.serialization.jsonSerialization import serializeToJSON
+from spe.common.serialization.jsonSerialization import fastSerializeToJSONBytes
 from spe.common.timer import Timer
 
 if TYPE_CHECKING:
     from spe.pipeline.connection import Connection
     from spe.pipeline.operators.operator import Operator
-    from spe.runtime.monitor.heatmap import HeatmapResult
 
 
-def createOperatorData(operators: List[Operator]) -> json:
+def createOperatorData(operators: List[Operator]) -> bytes:
     obj = {"cmd": "opMonitorData"}
 
     ops = []
@@ -21,23 +19,23 @@ def createOperatorData(operators: List[Operator]) -> json:
     for op in operators:
         monitor = op.getMonitor()
 
-        resData: Dict[str, json] = dict()
+        resData: Dict[str, Dict] = dict()
 
         resData["id"] = op.id
         resData["data"] = monitor.getDisplayData()
         resData["exTime"] = monitor.getAvgExecutionTime()
         resData["dataSize"] = monitor.getAvgDataSize()
         resData["totalTuples"] = monitor.getTotalTuples()
-        resData["time"] = Timer.currentTime()
+        resData["time"] = monitor.getLastProcessTime()
 
         ops.append(resData)
 
     obj["ops"] = ops
 
-    return serializeToJSON(obj)
+    return fastSerializeToJSONBytes(obj)
 
 
-def createConnectionData(connections: List[Connection]) -> json:
+def createConnectionData(connections: List[Connection]) -> bytes:
     obj = {"cmd": "conMonitorData"}
 
     cons = []
@@ -54,10 +52,10 @@ def createConnectionData(connections: List[Connection]) -> json:
 
     obj["cons"] = cons
 
-    return json.dumps(obj)
+    return fastSerializeToJSONBytes(obj)
 
 
-def createMessageBrokerData(operators: List[Operator]):
+def createMessageBrokerData(operators: List[Operator]) -> bytes:
     obj = {"cmd": "msgBroker"}
 
     ops = []
@@ -69,20 +67,4 @@ def createMessageBrokerData(operators: List[Operator]):
 
     obj["ops"] = ops
 
-    return json.dumps(obj)
-
-
-def createHeatmapData(hmData: HeatmapResult) -> json:
-    obj = {"cmd": "heatmap"}
-
-    ops = []
-
-    for k, v in hmData.opRating.items():
-        ops.append({"op": k.id, "rating": v})
-
-    obj["ops"] = ops
-    obj["min"] = hmData.minVal
-    obj["max"] = hmData.maxVal
-    obj["steps"] = hmData.legendSteps
-
-    return json.dumps(obj)
+    return fastSerializeToJSONBytes(obj)

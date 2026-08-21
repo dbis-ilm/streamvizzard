@@ -6,7 +6,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _ImgResize extends Definition {
     constructor(pathIdentifier){
-        super("ImgResize", "Img Resize", pathIdentifier);
+        super("ImgResize", "Img Resize", pathIdentifier,
+            "Resizes the input image.");
     }
 
     build(operator) {

@@ -8,6 +8,7 @@ from collections import deque
 from enum import Enum
 from typing import Optional, List, Deque, Dict, TYPE_CHECKING, Type, Set
 
+from spe.common.dataType import DataType
 from spe.pipeline.socket import Socket
 from abc import ABC, abstractmethod
 
@@ -46,8 +47,12 @@ class Operator(ABC, IEventEmitter):
     EVENT_TUPLE_PROCESSED = "onTupleProcessed"  # [processedTuple, exTime] After the tuple has been processed. Attributes: Tuple Out, ExTime
     EVENT_TUPLE_PRE_PROCESSED = "preTupleProcessed"  # [processedTuple] Before the tuple will be processed. Attributes: Tuple In
 
+    # Required input data types for type check. Either a tuple of types, one for each socket or a single entry for all sockets.
+    # In both cases, multiple alternatives for accepted types can be defined as a list [OR].
+    requiredInputTypes: (DataType | list[DataType]) | tuple[DataType | list[DataType], ...] = ()
+
     def __init__(self, opID: int, socketsIn: int, socketsOut: int,
-                 staticDataObject: bool = False, supportsDebugging: bool = True):
+                 supportsDebugging: bool = True):
         super(Operator, self).__init__()
 
         self.id = opID  # Unique ID reflecting the operator entity in the pipeline
@@ -58,7 +63,6 @@ class Operator(ABC, IEventEmitter):
         self._eventLoop: Optional[asyncio.AbstractEventLoop] = None
         self._messageBroker = Operator.MessageBroker(self)
 
-        self.staticDataObject = staticDataObject  # If no deep copy of the object should occur in transmit
         self._supportDebugging = supportsDebugging  # If this operator does support debugging
 
         self._runtimeCreated = False
@@ -104,6 +108,27 @@ class Operator(ABC, IEventEmitter):
     @property
     def allowedChildren(self) -> Optional[List[Type[Operator]]]:
         return None
+
+    @staticmethod
+    def requiresInput(classes: (DataType | list[DataType]) | tuple[DataType | list[DataType], ...]):
+        """
+        Annotates the required types of the input tuple (.data object).
+        For each socket, one data type can be annotated [Tuple]. Otherwise, one type can be set for all sockets.
+        Both options allow to specify multiple alternatives types that can be accepted.
+
+        Example:
+            - requiresInput(FloatType()) -> Single type for all sockets
+            - requiresInput((FloatType(), BoolType())) -> One type for each individual socket
+            - requiresInput([FloatType(), IntegerType()]) -> Two alternatives for all sockets
+            - requiresInput(([FloatType(), IntegerType()], BoolType())) -> Two alternatives for the first socket, one for second
+        """
+
+        def decorator(opClass: Operator):
+            opClass.requiredInputTypes = classes
+
+            return opClass
+
+        return decorator
 
     def _configureSockets(self, socketsIn: int, socketsOut: int):
         socketsChanged = socketsIn != len(self.inputs) or socketsOut != len(self.outputs)
@@ -473,13 +498,12 @@ class Operator(ABC, IEventEmitter):
         if not self.isRunning():
             return
 
-        if not self.staticDataObject:
-            # Creates a copy of the input data to not impact previous DTs or parallel executions
-            # Premise: The internal tuple data will never change before or after this execute call
-            tupleIn = tupleIn.clone(True)
+        # Creates a copy of the input data to not impact previous DTs or parallel executions
+        # Premise: The internal tuple data will never change before or after this execute call
+        tupleIn = tupleIn.clone(True)
 
-            if not self.isRunning():
-                return
+        if not self.isRunning():
+            return
 
         prevError = self._currentError
 
@@ -533,10 +557,63 @@ class Operator(ABC, IEventEmitter):
         except Exception:
             self.onExecutionError()
 
+    def _ensureRequiredInputTypes(self, inputData: Tuple) -> bool:
+        fixedTypes: Optional[DataType | list[DataType]] = None
+        reqTypesL = 0
+
+        if isinstance(self.requiredInputTypes, tuple):
+            reqTypesL = len(self.requiredInputTypes)
+        else:
+            fixedTypes = self.requiredInputTypes
+
+        if fixedTypes is None and reqTypesL == 0:  # No types specified
+            return True
+
+        for i in range(len(inputData.data)):
+            checkTypes = fixedTypes
+
+            if fixedTypes is None:
+                if reqTypesL > i:
+                    checkTypes = self.requiredInputTypes[i]
+                else:  # No more entries to verify in required type list
+                    return True
+
+            if not isinstance(checkTypes, list):
+                checkTypes = [checkTypes]
+
+            # Perform actual type check!
+
+            dataPortion = inputData.data[i]
+
+            match = False
+
+            for checkType in checkTypes:
+                if match := checkType.matches(dataPortion, False):
+                    break  # If we have match we stop checking remaining alternatives
+
+            if not match:
+                fullType = DataType.retrieve(dataPortion, True)
+
+                self.onExecutionError(
+                    f"Invalid input data type{(' in socket ' + str(i)) if len(self.inputs) > 1 else ''}!\n"
+                    f"Expected: {' or '.join([ct.toReadableStr() for ct in checkTypes])}, "
+                    f"Received: {fullType.toReadableStr() if fullType is not None else type(dataPortion).__name__}")
+
+                return False
+
+        return True
+
     def _performExecute(self, inputData: Tuple) -> tuple[Optional[Tuple], float]:
         start = Timer.currentRealTime()
 
-        # TODO: Experiment with Python 3.14 thread-free execution mode!
+        # Perform check of annotated required input data types to avoid errors inside operators
+
+        if not self._ensureRequiredInputTypes(inputData):
+            return None, 0
+
+        # Perform actual operator execution
+
+        # TODO: Experiment with Python 3.14 thread-free execution mode! (currently not supported for all required libs)
         outputData = self._execute(inputData)
 
         end = Timer.currentRealTime()
@@ -690,13 +767,9 @@ class Operator(ABC, IEventEmitter):
 
         def _undoProcessElement(self, processedTuple: Tuple):
             for i in range(len(processedTuple.data)):
-                data = processedTuple.data[i]
+                self._messageQueue[i].appendleft(processedTuple.data[i])
 
-                # If we have real data
-                if data is not None:
-                    self._messageQueue[i].appendleft(processedTuple.data[i])
-
-                    self._totalMessages += 1
+                self._totalMessages += 1
 
             self._notifyMessageQueueChanged()
 

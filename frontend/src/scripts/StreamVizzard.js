@@ -16,7 +16,7 @@ import Interface from "@/scripts/interface/Interface";
 export class StreamVizzard {
     constructor() {
         /** @type String **/
-        this.version = "0.9.6";
+        this.version = "0.9.9";
 
         // Restore last pipeline after page refresh
         this.restorePipeline = valueOr(localStorage.getItem("restorePipeline"), "true") === "true"
@@ -56,9 +56,13 @@ export class StreamVizzard {
     initializeSystem() {
         // Register data exporter
 
+        Services.DataExporter.registerDataExporter("interface",  // Restore interface before loading pipelines
+            () => { return this.interface.exportSaveData() },
+            async (data) => { await this.interface.importSaveData(data); });
+
         Services.DataExporter.registerDataExporter("pipeline", // Must be first entry!
             () => { return this.pipeline.exportSaveData() },
-            async(data) => { await this.pipeline.importSaveData(data) });
+            async(data) => { await this.pipeline.importSaveData(data); });
 
         Services.DataExporter.registerDataExporter("monitor",
             () => { return this.monitor.exportSaveData() },
@@ -79,10 +83,6 @@ export class StreamVizzard {
         Services.DataExporter.registerDataExporter("editor",
             () => { return this.editor.exportSaveData() },
             (data) => { this.editor.importSaveData(data); });
-
-        Services.DataExporter.registerDataExporter("interface",
-            () => { return this.interface.exportSaveData() },
-            (data) => { this.interface.importSaveData(data); });
 
         this.modules.load();
 

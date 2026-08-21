@@ -8,7 +8,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _VideoFile extends Definition {
     constructor(pathIdentifier){
-        super("VideoFile", "Video File", pathIdentifier, true);
+        super("VideoFile", "Video File", pathIdentifier,
+            "Loads a video file and streams the individual frames into the pipeline.", true);
     }
 
     build(operator) {

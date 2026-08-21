@@ -1,14 +1,15 @@
-import json
 import statistics as stat
-from typing import Optional
+from typing import Optional, List, Dict
 
 import numpy as ny
 
+from spe.common.dataType import ArrayType, FloatType, IntegerType
 from spe.pipeline.operators.operator import Operator
 from spe.common.tuple import Tuple
 from utils.utils import tryParseInt, clamp
 
 
+@Operator.requiresInput([ArrayType(entryType=FloatType()), ArrayType(entryType=IntegerType())])
 class AnomalyDetection(Operator):
     def __init__(self, opID: int):
         super(AnomalyDetection, self).__init__(opID, 1, 2)
@@ -18,7 +19,7 @@ class AnomalyDetection(Operator):
         self.lowerQuantile = 25
         self.windowSize = 10
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
         self.mode = data["mode"]  # [mean, mode, median, remove]
         self.upperQuantile = clamp(tryParseInt(data["upperQuantile"], 75), 0, 100)
         self.lowerQuantile = clamp(tryParseInt(data["lowerQuantile"], 25), 0, 100)
@@ -28,7 +29,7 @@ class AnomalyDetection(Operator):
         return {"mode": self.mode, "upperQuantile": self.upperQuantile, "lowerQuantile": self.lowerQuantile, "windowSize": self.windowSize}
 
     def _execute(self, tupleIn: Tuple) -> Optional[Tuple]:
-        data = tupleIn.data[0]
+        data: List = tupleIn.data[0]
 
         Q3, Q1 = ny.percentile(data, [self.upperQuantile, self.lowerQuantile])
         IQR = Q3 - Q1

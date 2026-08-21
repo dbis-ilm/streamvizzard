@@ -5,10 +5,11 @@ import traceback
 import cv2
 
 from spe.pipeline.operators.base.dataTypes.scatterplotD import ScatterplotD
-from spe.common.dataType import DataType
+from spe.common.dataType import ArrayType
 from spe.pipeline.operators.imageProc.advisorStrategies.grayInputStrategy import GrayInputStrategy
 from spe.pipeline.operators.imageProc.dataTypes.image import Image, ImageType
-from spe.pipeline.operators.module import Module, MonitorDataType
+from spe.pipeline.operators.module import Module
+from spe.runtime.monitor.dataDisplayType import DataDisplayType
 from streamVizzard import StreamVizzard
 
 
@@ -39,24 +40,17 @@ class ImageProcModule(Module):
 
         self.registerOp("spe.pipeline.operators.imageProc.operators.transform.imgLoad", "ImgLoad", "Operators/Transform/ImgLoad")
 
-        DataType.register(ImageType.ImageDTD())
-
-        imgDT = MonitorDataType("IMAGE", lambda x: isinstance(x, Image))
+        imgDT = DataDisplayType("IMAGE", [DataDisplayType.TypeEntry(ImageType())])
         imgDT.registerDisplayMode(0, self.displayImageRaw)  # Raw
         imgDT.registerDisplayMode(1, self.displayImageGrayscale)  # Grayscale
         imgDT.registerDisplayMode(2, self.displayImageHistogram)  # Histogram
         self.registerMonitorDataType(imgDT)
 
-        imgArrayDT = MonitorDataType("ARRAY_IMG", lambda x: MonitorDataType.isArrayOf(x, Image))
+        imgArrayDT = DataDisplayType("ARRAY_IMG", [DataDisplayType.TypeEntry(ArrayType(entryType=ImageType()))])
         imgArrayDT.registerDisplayMode(0, lambda x, y: len(x))  # Count
         imgArrayDT.registerDisplayMode(1, self.displayImgArrayDelta)  # Delta
         imgArrayDT.registerDisplayMode(2, self.displayImgArraySum)  # Sum
         self.registerMonitorDataType(imgArrayDT)
-
-        # Transform Image Window to Image Array
-        imgWindowDT = MonitorDataType("WINDOW_IMG", lambda x: MonitorDataType.isWindowOf(x, Image))
-        imgWindowDT.registerTransformFunc(lambda x: x.toDataArray())
-        self.registerMonitorDataType(imgWindowDT)
 
         # ------ Advisor Strategies ------
         self.registerAdvisorStrategy(["spe.pipeline.operators.imageProc.operators.process.eqHistogram.EqHistogram",
@@ -120,7 +114,7 @@ class ImageProcModule(Module):
             hist = cv2.calcHist([mat], [i], None, [256], [0, 256]).flatten().tolist()
             histoData.append(hist)
 
-        return ScatterplotD(histoData)
+        return ScatterplotD(histoData, settings)
 
     # -------------------------------- ARRAY IMAGE DT --------------------------------
 

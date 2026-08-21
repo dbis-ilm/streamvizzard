@@ -154,7 +154,7 @@ class DefaultPS(PlacementStrategy):
         for entry in bestConstellation.values():
             self.applyTargetResults(entry)
 
-        return CompilerRes.ok(f"Completed {its} iterations in {round(end - start, 2)} s!")
+        return CompilerRes.okWithRes(f"Completed {its} iterations in {round(end - start, 2)} s!")
 
     # --------------------------------------------- Simulated Annealing ------------------------------------------------
 
@@ -241,7 +241,7 @@ class DefaultPS(PlacementStrategy):
         for entry in bestConstellation.values():
             self.applyTargetResults(entry)
 
-        return CompilerRes.ok(f"Completed {totalIterations} iterations in {round(end - start, 2)} s!")
+        return CompilerRes.okWithRes(f"Completed {totalIterations} iterations in {round(end - start, 2)} s!")
 
     # ---------------------------------------------------- Greedy ------------------------------------------------------
 
@@ -284,7 +284,7 @@ class DefaultPS(PlacementStrategy):
         for opCatalog in self.opTargetCatalog.values():
             self.applyTargetResults(opCatalog.selectedOption)
 
-        return CompilerRes.ok(f"Completed {totalIterations} iterations in {round(end - start, 2)} s!")
+        return CompilerRes.okWithRes(f"Completed {totalIterations} iterations in {round(end - start, 2)} s!")
 
     # ------------------------------------------------ Back Tracking ---------------------------------------------------
 
@@ -343,7 +343,7 @@ class DefaultPS(PlacementStrategy):
         for opCatalog in self.opTargetCatalog.values():
             self.applyTargetResults(opCatalog.selectedOption)
 
-        return CompilerRes.ok(f"Completed {totalIterations} iterations in {round(end - start, 2)} s!")
+        return CompilerRes.okWithRes(f"Completed {totalIterations} iterations in {round(end - start, 2)} s!")
 
     # --------------------------------------------- Op Target Estimation -----------------------------------------------
 

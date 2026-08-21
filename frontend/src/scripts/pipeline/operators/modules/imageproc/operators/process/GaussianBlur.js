@@ -6,7 +6,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _GaussianBlur extends Definition {
     constructor(pathIdentifier){
-        super("GaussianBlur", "Gaussian Blur", pathIdentifier);
+        super("GaussianBlur", "Gaussian Blur", pathIdentifier,
+            "Smoothens the input image via a Gaussian kernel.");
     }
 
     build(operator) {

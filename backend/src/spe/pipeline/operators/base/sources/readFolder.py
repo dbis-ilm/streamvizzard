@@ -1,7 +1,7 @@
-import json
 import os
 import time
 from pathlib import Path
+from typing import Dict
 
 from spe.pipeline.operators.source import Source
 
@@ -15,7 +15,7 @@ class ReadFolder(Source):
         self.rate = 0
         self.limitRate = 0
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
         self.path = data["path"]
         self.limitRate = data["limitRate"]
         self.repeat = data["repeat"]

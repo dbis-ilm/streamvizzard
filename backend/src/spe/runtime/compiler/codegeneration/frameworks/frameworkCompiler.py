@@ -246,3 +246,24 @@ class FrameworkCompiler(ABC):
             return None
 
         return transformerList
+
+    # ----------------------------------------------------- Utils ------------------------------------------------------
+
+    @staticmethod
+    def _getUniqueImports(importList: List[str]) -> List[str]:
+        """ Removes duplicates from a list of import strings. """
+
+        imports = "\n".join([imp.strip() for imp in importList])
+
+        # Remove duplicates
+
+        lines = imports.strip().split("\n")
+
+        uniqueImports: Set[str] = set()
+
+        for line in lines:
+            uniqueImports.add(line.strip())
+
+        sortedList = sorted(list(uniqueImports), key=lambda x: len(x))
+
+        return sortedList

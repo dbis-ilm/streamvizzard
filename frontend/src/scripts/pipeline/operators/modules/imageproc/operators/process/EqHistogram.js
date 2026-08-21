@@ -5,7 +5,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _EqHistogram extends Definition {
     constructor(pathIdentifier){
-        super("EqHistogram", "Eq. Histogram", pathIdentifier);
+        super("EqHistogram", "Eq. Histogram", pathIdentifier,
+            "Equalize the pixel intensity in the input grayscale image so the histogram becomes more uniform.");
     }
 
     build(operator) {

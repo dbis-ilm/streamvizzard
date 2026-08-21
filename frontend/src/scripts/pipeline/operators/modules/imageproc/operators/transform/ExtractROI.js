@@ -6,7 +6,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _ExtractROI extends Definition {
     constructor(pathIdentifier){
-        super("ExtractROI", "Extract ROI", pathIdentifier);
+        super("ExtractROI", "Extract ROI", pathIdentifier,
+            "Extracts a section of interest from the image and returns it as a new image.");
     }
 
     build(operator) {

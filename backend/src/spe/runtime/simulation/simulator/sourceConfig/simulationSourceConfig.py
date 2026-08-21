@@ -1,6 +1,5 @@
-import json
 from enum import Enum
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 from analysis.costModel.configurations.costModelOpSetups import OpInputDataFeature
 from analysis.costModel.costModel import CostModel, CostModelTarget
@@ -30,7 +29,7 @@ class SimulationSourceConfig:
         self.rate = rate  # The rate in seconds, e.g: 0.25 = 4 elements per second
 
     @staticmethod
-    def createConfig(s: Source, sourceConfigs: json, costModelPath: str):
+    def createConfig(s: Source, sourceConfigs: Dict, costModelPath: str):
         dataMode = PipelineSourceDataMode.NORMAL_DIST
         rate = 0
         data: Optional[SimulationSourceData] = None

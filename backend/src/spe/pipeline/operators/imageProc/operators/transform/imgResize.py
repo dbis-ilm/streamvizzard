@@ -1,13 +1,13 @@
-import json
-from typing import Optional
+from typing import Optional, Dict
 
 import cv2
 
-from spe.pipeline.operators.imageProc.dataTypes.image import Image
+from spe.pipeline.operators.imageProc.dataTypes.image import Image, ImageType
 from spe.pipeline.operators.operator import Operator
 from spe.common.tuple import Tuple
 
 
+@Operator.requiresInput(ImageType())
 class ImgResize(Operator):
     """
     Inputs: 1
@@ -26,7 +26,7 @@ class ImgResize(Operator):
         self.useAbsoluteScaleX = True
         self.useAbsoluteScaleY = True
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
         self.scaleXRaw = data["scaleX"]
         self.scaleYRaw = data["scaleY"]
 
@@ -53,11 +53,11 @@ class ImgResize(Operator):
         return {"scaleX": self.scaleXRaw, "scaleY": self.scaleYRaw}
 
     def _execute(self, tupleIn: Tuple) -> Optional[Tuple]:
-        img = tupleIn.data[0].mat
+        img: Image = tupleIn.data[0]
 
-        width = int(self.scaleX if self.useAbsoluteScaleX else img.shape[1] * self.scaleX / 100)
-        height = int(self.scaleY if self.useAbsoluteScaleY else img.shape[0] * self.scaleY / 100)
+        width = int(self.scaleX if self.useAbsoluteScaleX else img.mat.shape[1] * self.scaleX / 100)
+        height = int(self.scaleY if self.useAbsoluteScaleY else img.mat.shape[0] * self.scaleY / 100)
 
-        img = cv2.resize(img, (width, height))
+        res = cv2.resize(img.mat, (width, height))
 
-        return self.createTuple((Image(img),))
+        return self.createTuple((Image(res),))

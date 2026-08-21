@@ -1,5 +1,5 @@
-import json
 import time
+from typing import Dict
 
 import requests
 
@@ -13,7 +13,7 @@ class HTTPGet(Source):
         self.url = ""
         self.rate = 0
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
         self.url = data["url"]
         self.rate = data["rate"]
 

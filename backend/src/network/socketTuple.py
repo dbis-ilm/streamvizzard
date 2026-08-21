@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import json
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Dict
 
+from spe.common.serialization.jsonSerialization import fastSerializeToJSONBytes
 from spe.runtime.monitor.dataProtocol import createOperatorData, createMessageBrokerData
 from spe.runtime.monitor.dataProtocol import createConnectionData
 
@@ -20,7 +20,7 @@ class SocketTuple(ABC):
             self._onSendCallback(self)
 
     @abstractmethod
-    def getData(self):
+    def getData(self) -> bytes | None:  # None = message is dropped
         pass
 
 
@@ -30,7 +30,7 @@ class OperatorSocketTuple(SocketTuple):
 
         self.operator = operator
 
-    def getData(self):
+    def getData(self) -> bytes | None:
         return createOperatorData([self.operator])
 
 
@@ -40,7 +40,7 @@ class ConnectionSocketTuple(SocketTuple):
 
         self.connection = connection
 
-    def getData(self):
+    def getData(self) -> bytes | None:
         return createConnectionData([self.connection])
 
 
@@ -50,21 +50,8 @@ class MessageBrokerSocketTuple(SocketTuple):
 
         self.operators = operators
 
-    def getData(self):
+    def getData(self) -> bytes | None:
         return createMessageBrokerData(self.operators)
-
-
-class HeatmapSocketTuple(SocketTuple):
-    def __init__(self, data, onSendCallback):
-        super(HeatmapSocketTuple, self).__init__(onSendCallback)
-
-        self._data = data
-
-    def getData(self):
-        return self._data
-
-    def setData(self, data):
-        self._data = data
 
 
 class DebugStepGetterSocketTuple(SocketTuple):
@@ -75,7 +62,7 @@ class DebugStepGetterSocketTuple(SocketTuple):
         self.step = currentStep
         self.undo = undo
 
-    def getData(self):
+    def getData(self) -> bytes | None:
         return self._dataGetter(self.step, self.undo)
 
 
@@ -89,7 +76,7 @@ class HistoryBranchUpdateSocketTuple(SocketTuple):
     def addBranch(self, branch: PipelineHistoryBranch):
         self.branches[branch.id] = branch
 
-    def getData(self):
+    def getData(self) -> bytes | None:
         data = {"cmd": "debHGUpdate"}
 
         updates = []
@@ -105,7 +92,7 @@ class HistoryBranchUpdateSocketTuple(SocketTuple):
 
         data["updates"] = updates
 
-        return json.dumps(data)
+        return fastSerializeToJSONBytes(data)
 
 
 class GenericSocketTuple(SocketTuple):
@@ -114,7 +101,7 @@ class GenericSocketTuple(SocketTuple):
 
         self._data = data
 
-    def getData(self):
+    def getData(self) -> bytes | None:
         return self._data
 
     def setData(self, data):
@@ -127,5 +114,5 @@ class GenericGetterSocketTuple(SocketTuple):
 
         self._dataGetter = dataGetter
 
-    def getData(self):
+    def getData(self) -> bytes | None:
         return self._dataGetter()

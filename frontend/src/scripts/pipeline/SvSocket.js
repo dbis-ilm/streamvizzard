@@ -5,9 +5,11 @@ import {ViewConnector} from "@/scripts/tools/ViewConnector";
 import {anySocket} from "@/scripts/pipeline/operators/modules";
 
 export class SocketType {
-    /** @param {String} name **/
-    constructor(name) {
+    /** @param {String} name
+     * @param {Boolean} strictCompatibility If this socket is only compatible with itself and specified socket types. **/
+    constructor(name, strictCompatibility = false) {
         this.name = name;
+        this.strictCompatibility = strictCompatibility;
 
         this.compatibleTypes = new Set();
     }
@@ -21,8 +23,9 @@ export class SocketType {
     /** @param {SocketType} other
      * @returns Boolean */
     isCompatibleWith(other) {
-        // Always compatible with same type and with anySocket
-        if(this === other || this === anySocket || other === anySocket) return true;
+        // Always compatible with same type and with anySocket (if not strict compatibility)
+        if(this === other || ((this === anySocket || other === anySocket)
+            && !(this.strictCompatibility || other.strictCompatibility))) return true;
 
         return this.compatibleTypes.has(other);
     }

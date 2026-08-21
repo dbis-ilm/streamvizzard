@@ -1,10 +1,12 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
+
 from spe.common.tuple import Tuple
 from streamVizzard import StreamVizzard
 
 if TYPE_CHECKING:
     from spe.pipeline.socket import Socket
+from spe.runtime.monitor.connectionMonitor import ConnectionMonitor
 
 
 class Connection:
@@ -23,7 +25,7 @@ class Connection:
         if self._monitor is not None:
             self._monitor.registerTuple(origTuple)
 
-    def getMonitor(self):
+    def getMonitor(self) -> Optional[ConnectionMonitor]:
         return self._monitor
 
     @staticmethod

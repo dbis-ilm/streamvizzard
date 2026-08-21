@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING, List, Set
 
+from spe.common.serialization.jsonSerialization import fastSerializeToJSONBytes
 from spe.pipeline.pipeline import Pipeline
 from spe.pipeline.pipelineUpdates import PipelineUpdate
 from spe.runtime.debugger.debugStep import DebugStep
@@ -40,11 +40,12 @@ class PipelineUpdateHandler:
                 ds.registerPipelineUpdate(up)
                 registeredUpdateIDs.add(up.updateID)
 
-            self._debugger.getServerManager().sendSocketData(json.dumps({"cmd": "debRegPU",
-                                                                         "updateIDs": list(registeredUpdateIDs),
-                                                                         "branchID": ds.branchID,
-                                                                         "stepID": ds.localID,
-                                                                         "stepTime": ds.time}))
+            self._debugger.getServerManager().sendSocketData(fastSerializeToJSONBytes(
+                {"cmd": "debRegPU", "updateIDs": list(registeredUpdateIDs),
+                 "branchID": ds.branchID, "stepID": ds.localID,
+                 "stepTime": ds.time}
+            ))
+
             self._pendingEvents.clear()
 
     def onDebugStepExecuted(self):
@@ -72,8 +73,11 @@ class PipelineUpdateHandler:
         for up in self._pendingEvents:
             registeredUpdateIDs.add(up.updateID)
 
-        self._debugger.getServerManager().sendSocketData(json.dumps({"cmd": "debUndoPendingPU",
-                                                                     "updateIDs": list(registeredUpdateIDs)}))
+        self._debugger.getServerManager().sendSocketData(fastSerializeToJSONBytes(
+            {"cmd": "debUndoPendingPU",
+             "updateIDs": list(registeredUpdateIDs)})
+        )
+
         for up in reversed(self._pendingEvents):
             up.undo()
 

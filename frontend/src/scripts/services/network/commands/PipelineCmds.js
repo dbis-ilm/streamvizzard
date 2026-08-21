@@ -1,6 +1,7 @@
 import {Command} from "@/scripts/services/network/commands/Command";
 import {PIPELINE_STATUS} from "@/scripts/pipeline/Pipeline";
 import {SvInstance} from "@/scripts/StreamVizzard";
+import {parseAdvisorSuggestion} from "@/scripts/features/advisor/AdvisorSuggestion";
 
 class PipelineStatusCMD extends Command {
     constructor() {
@@ -30,7 +31,12 @@ class PipelineAdvisorSugCMD extends Command {
     handleCommand(data) {
         let op = SvInstance.pipeline.getOperatorByID(data["opID"]);
 
-        if(op != null) op.advisorSuggestions = data["sugs"];
+        if(op != null) {
+            let s = data["sugs"];
+
+            if(s != null) op.updateAdvisorSuggestions(s.map(rw => parseAdvisorSuggestion(rw)).filter(s => s != null));
+            else op.updateAdvisorSuggestions(null);
+        }
     }
 }
 

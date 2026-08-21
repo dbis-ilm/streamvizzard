@@ -302,4 +302,8 @@ export default {
   cursor: default;
 }
 
+#pipelineDebugger .vue-slider-dot-tooltip-bottom {
+  bottom: -7px;
+}
+
 </style>

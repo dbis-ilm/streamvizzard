@@ -11,6 +11,7 @@ import ResizeElement from "@/components/pipeline/operator/ResizeElement.vue";
 
 export default {
   components: {ResizeElement},
+  inject: ['performTrackedRender'],
   props: {
     /** @type {SvOperator} **/
     operator: {required: true},
@@ -28,7 +29,7 @@ export default {
 
   watch: {
     value() {
-      this.imgData = this.value != null ? this.value["data"] : null;
+      this.performTrackedRender(() => { this.imgData = this.value != null ? this.value["data"] : null; });
     }
   },
 

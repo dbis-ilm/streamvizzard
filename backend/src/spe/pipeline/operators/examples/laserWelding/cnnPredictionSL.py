@@ -1,10 +1,10 @@
 import asyncio
-import json
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 import numpy as np
 from tensorflow import keras
 
+from spe.pipeline.operators.imageProc.dataTypes.image import ImageType, Image
 from spe.pipeline.operators.operator import Operator
 from spe.runtime.compiler.definitions.compileDefinitions import CompileFramework, CompileLanguage, CompileComputeMode, \
     CompileParallelism
@@ -13,6 +13,7 @@ from spe.runtime.compiler.definitions.compileOpSpecs import CompileOpSpecs
 from spe.common.tuple import Tuple
 
 
+@Operator.requiresInput(ImageType())
 class CNNPredictionSL(Operator):
 
     def __init__(self, opID: int):
@@ -25,8 +26,13 @@ class CNNPredictionSL(Operator):
 
         self._model = None
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
+        oldPath = self.modelPath
+
         self.modelPath = data["modelPath"]
+
+        if self.isRunning() and oldPath != self.modelPath:
+            self._ensureModel()
 
     def getData(self) -> dict:
         return {"modelPath": self.modelPath}
@@ -34,16 +40,28 @@ class CNNPredictionSL(Operator):
     def onRuntimeCreate(self, eventLoop: asyncio.AbstractEventLoop):
         super(CNNPredictionSL, self).onRuntimeCreate(eventLoop)
 
-        self._model = keras.models.load_model(self.modelPath)
+        self._ensureModel()
+
+    def _ensureModel(self):
+        self._model = None
+
+        if self.modelPath is None or len(self.modelPath) == 0:
+            return
+
+        try:
+            self._model = keras.models.load_model(self.modelPath)
+            self.clearExecutionError()
+        except Exception:
+            self.onExecutionError()
 
     def _execute(self, tupleIn: Tuple) -> Optional[Tuple]:
         if self._model is None:
             return None
 
-        frame = tupleIn.data[0].mat
+        img: Image = tupleIn.data[0]
 
         # Normalize
-        roi = (frame - self.minimum) / (self.maximum - self.minimum)
+        roi = (img.mat - self.minimum) / (self.maximum - self.minimum)
 
         # Reshape for CNN
         roi = np.reshape(roi, (1, 59, 9))

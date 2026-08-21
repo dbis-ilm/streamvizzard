@@ -1,5 +1,4 @@
-import json
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 from spe.pipeline.operators.base.operators.windows.windowProcessor import WindowProcessor
 from spe.runtime.compiler.definitions.compileDefinitions import CompileFramework, CompileComputeMode, \
@@ -14,7 +13,7 @@ class WindowCollect(WindowProcessor):
     def __init__(self, opID: int):
         super(WindowCollect, self).__init__(opID, 1, 1)
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
         pass
 
     def getData(self) -> dict:

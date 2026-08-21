@@ -1,6 +1,6 @@
 import {EVENTS, executeEvent} from "@/scripts/tools/EventHandler";
 import {SvInstance} from "@/scripts/StreamVizzard";
-import {getOperatorBoundingBox} from "@/scripts/tools/Utils";
+import {containsPoint, getOperatorBoundingBox, intersects} from "@/scripts/tools/Utils";
 import TemplateHost from "@/scripts/tools/TemplateHost";
 
 export class Group extends TemplateHost {
@@ -142,23 +142,7 @@ export class Group extends TemplateHost {
         let opTop = op.posY;
         let opBottom = opTop + op.height;
 
-        return !(
-            opLeft > right ||
-            opRight < left ||
-            opTop > bottom ||
-            opBottom < top
-        );
-    }
-
-    /** @param {Number} x
-     * @param {Number} y */
-    containsPoint(x, y) {
-        return (
-            x >= this.x &&
-            x <= this.x + this.width &&
-            y >= this.y &&
-            y <= this.y + this.height
-        );
+        return intersects(left, top, right, bottom, opLeft, opTop, opRight, opBottom);
     }
 
     // ------------------------------------------------ Config / Storage -----------------------------------------------
@@ -193,7 +177,10 @@ class GroupCache {
                 conLookup[con.id] = true;
 
                 for(let pin of con.reroutes) {
-                    if(this.group.containsPoint(pin.x, pin.y)) containedReroutes.push(pin);
+                    if (containsPoint(this.group.x, this.group.y,
+                        this.group.x + this.group.width,
+                        this.group.y + this.group.height,
+                        pin.x, pin.y)) containedReroutes.push(pin);
                 }
             }
         }

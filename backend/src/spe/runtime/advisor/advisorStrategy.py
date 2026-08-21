@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import TYPE_CHECKING, Optional, Callable
+from typing import TYPE_CHECKING, Optional, Callable, List
 
 from spe.runtime.advisor.advisorSuggestion import AdvisorSuggestion
 from spe.common.tuple import Tuple
@@ -30,5 +30,5 @@ class AdvisorStrategy(ABC):
         ...
 
     @abstractmethod
-    def makeSuggestion(self, lastTuple: Tuple) -> Optional[AdvisorSuggestion]:
+    def makeSuggestion(self, lastTuple: Tuple) -> Optional[List[AdvisorSuggestion]]:
         ...

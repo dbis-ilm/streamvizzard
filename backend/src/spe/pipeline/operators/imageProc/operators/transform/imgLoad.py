@@ -2,11 +2,13 @@ from typing import Optional, Dict
 
 import cv2
 
+from spe.common.dataType import StringType
 from spe.pipeline.operators.imageProc.dataTypes.image import Image
 from spe.pipeline.operators.operator import Operator
 from spe.common.tuple import Tuple
 
 
+@Operator.requiresInput(StringType())
 class ImgLoad(Operator):
     def __init__(self, opID: int):
         super(ImgLoad, self).__init__(opID, 1, 1)
@@ -30,7 +32,7 @@ class ImgLoad(Operator):
         return {"flags": self.flags}
 
     def _execute(self, tupleIn: Tuple) -> Optional[Tuple]:
-        path = tupleIn.data[0]
+        path: str = tupleIn.data[0]
 
         if self.flags is not None:
             img = cv2.imread(path, self.flags)

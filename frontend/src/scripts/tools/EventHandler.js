@@ -3,7 +3,10 @@ export const EVENTS = {
 
     CONNECTION_CREATED: "CONNECTION_CREATED", // Param: Connection
     CONNECTION_REMOVED: "CONNECTION_REMOVED", // Param: Connection
-    CONNECTION_REROUTES_CHANGED: "CONNECTION_REROUTES_CHANGED", // Param: Connection, Prev, Cascaded [bool] | Cascaded: triggered by group
+
+    CONNECTION_REROUTES_INTERACTED: "CONNECTION_REROUTES_INTERACTED", // Param: Pin, Type [INTERACTION] | User interaction
+    CONNECTION_REROUTES_CHANGED: "CONNECTION_REROUTES_CHANGED", // Param: Connection, Prev | Reroute added or removed
+    CONNECTION_REROUTES_MOVED: "CONNECTION_REROUTES_MOVED", // Param: Pin, Prev, Cascaded [bool] | Cascaded: triggered by group
 
     OP_CREATED: "OP_CREATED", // Param: Operator
     OP_REMOVED: "OP_REMOVED", // Param: Operator

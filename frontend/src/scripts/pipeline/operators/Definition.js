@@ -2,13 +2,14 @@ import {EVENTS, executeEvent} from "@/scripts/tools/EventHandler";
 
 /** Static singleton class, all operators share the same definition instance **/
 export class Definition {
-    constructor(internalName, displayName, pathIdentifier, source=false){
+    constructor(internalName, displayName, pathIdentifier, description, source=false){
         // The internal name should be the same as the class name in backend
         // to allow generating UI saveFiles from the backend pipeline!
 
         this.displayName = displayName
         this.identifier = internalName;
         this.path = pathIdentifier;
+        this.description = description;
         this.source = source;
         this.contextPath = null;
         this.bgColor = null;

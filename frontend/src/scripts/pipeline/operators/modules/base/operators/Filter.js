@@ -6,7 +6,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _UDF extends Definition {
     constructor(pathIdentifier){
-        super("Filter", "Filter", pathIdentifier);
+        super("Filter", "Filter", pathIdentifier,
+            "Filter out specific input tuples based on a user-defined function (return true for keeping the tuples).");
     }
 
     build(operator) {

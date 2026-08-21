@@ -6,7 +6,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _FileSink extends Definition {
     constructor(pathIdentifier){
-        super("FileSink", "File Sink", pathIdentifier);
+        super("FileSink", "Text File", pathIdentifier,
+            "Writes the input data to a file, line-by-line.");
     }
 
     build(operator) {

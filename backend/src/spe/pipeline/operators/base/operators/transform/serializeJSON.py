@@ -1,5 +1,4 @@
-import json
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 from spe.pipeline.operators.operator import Operator
 from spe.runtime.compiler.codegeneration.frameworks.pyFlink.pyFlinkStatics import pyFlinkJSONSerializer
@@ -15,7 +14,7 @@ class SerializeJSON(Operator):
     def __init__(self, opID: int):
         super(SerializeJSON, self).__init__(opID, 1, 1)
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
         pass
 
     def getData(self) -> dict:

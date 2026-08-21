@@ -5,7 +5,7 @@ export function migrateSaveData(saveData) {
     try {
         let svVersion = safeVal(saveData["svVersion"]);
 
-        if(svVersion === SvInstance.version) return saveData; // No migration required
+        if(svVersion === SvInstance.version || svVersion === "0.9.6") return saveData; // No migration required
 
         let compilerData = saveData["compiler"];
 
@@ -72,7 +72,7 @@ export function migrateOperatorSaveData(opData) {
     try {
         let svVersion = safeVal(opData["svVersion"]);
 
-        if(svVersion === SvInstance.version) return opData; // No migration required
+        if(svVersion === SvInstance.version || svVersion === "0.9.6") return opData; // No migration required
 
         opData["params"] = opData["data"];
         opData["name"] = opData["dName"];

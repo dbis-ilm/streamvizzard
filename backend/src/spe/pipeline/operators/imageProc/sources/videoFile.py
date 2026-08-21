@@ -1,5 +1,5 @@
-import json
 import time
+from typing import Dict
 
 import cv2
 
@@ -19,7 +19,7 @@ class VideoFile(Source):
         self.limitRate = False
         self.frameRate = 0
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
         self.path = data["path"]
         self.repeat = data["repeat"]
         self.frameRate = data["frameRate"]

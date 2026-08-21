@@ -1,27 +1,28 @@
-import json
-from typing import Optional
+from typing import Optional, Dict, List
 
 import numpy as np
 import pandas as pd
 
+from spe.common.dataType import ArrayType, FloatType, IntegerType
 from spe.pipeline.operators.operator import Operator
 from spe.common.tuple import Tuple
 
 
+@Operator.requiresInput([ArrayType(entryType=FloatType()), ArrayType(entryType=IntegerType())])
 class MissingValues(Operator):
     def __init__(self, opID: int):
         super(MissingValues, self).__init__(opID, 1, 1)
 
         self.mode = None
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
         self.mode = data["mode"]  # [linear, polynomial, padding, drop]
 
     def getData(self) -> dict:
         return {"mode": self.mode}
 
     def _execute(self, tupleIn: Tuple) -> Optional[Tuple]:
-        data = tupleIn.data[0]
+        data: List = tupleIn.data[0]
 
         # For pandas version stability we need to explicitly set nan for missing values
         dataSeries = pd.Series([np.nan if v is None else v for v in data])

@@ -1,7 +1,6 @@
-import json
-from array import array
-from typing import Optional
+from typing import Optional, Dict
 
+import numpy as np
 import pyaudio
 
 from spe.pipeline.operators.signalProc.dataTypes.signal import Signal
@@ -11,7 +10,6 @@ from spe.pipeline.operators.source import Source
 class Microphone(Source):
     FORMAT = pyaudio.paInt16
     CHANNELS = 1
-    CHUNK = 1024
 
     def __init__(self,  opID: int):
         super(Microphone, self).__init__(opID, 0, 1)
@@ -20,16 +18,19 @@ class Microphone(Source):
         self._audioStream: Optional[pyaudio.Stream] = None
 
         self.rate = 0
+        self.chunkSize = 1024
 
     def getData(self) -> dict:
-        return {"rate": self.rate}
+        return {"rate": self.rate, "chunkSize": self.chunkSize}
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
         newRate = int(data["rate"])
+        newChunkSize = int(data["chunkSize"])
 
         # Might crash if to frequent updates!
-        if self.rate != newRate:
+        if self.rate != newRate or self.chunkSize != newChunkSize:
             self.rate = newRate
+            self.chunkSize = newChunkSize
 
             self._closeAudioStream()
 
@@ -44,15 +45,16 @@ class Microphone(Source):
                 channels=self.CHANNELS,
                 rate=self.rate,
                 input=True,
-                frames_per_buffer=self.CHUNK
+                frames_per_buffer=self.chunkSize
             )
 
     def _closeAudioStream(self):
         if self._audioStream is not None:
-            self._audioStream.stop_stream()
-            self._audioStream.close()
+            s = self._audioStream
+            self._audioStream = None  # Avoid reading while we close stream
 
-            self._audioStream = None
+            s.stop_stream()
+            s.close()
 
     def onRuntimeDestroy(self):
         super(Microphone, self).onRuntimeDestroy()
@@ -70,12 +72,11 @@ class Microphone(Source):
 
             if self._audioStream is not None:
                 try:
-                    data = self._audioStream.read(self.CHUNK, exception_on_overflow=False)
+                    data = self._audioStream.read(self.chunkSize, exception_on_overflow=False)
 
-                    # Unpack data as a  16 - bit
-                    sample_data = array('h', data)
-
-                    dataArray = list(sample_data)
+                    # Unpack data as a  16 - bit [results interleaved 1D layout] and reshape to (samples, channels)
+                    dataArray = np.frombuffer(data, dtype=np.int16) / 32768.0  # Scale to [-1,1] (int16 storage)
+                    dataArray = dataArray.reshape(-1, self.CHANNELS).astype(np.float64)
 
                     self._produce((Signal(self.rate, dataArray),))
                 except Exception:

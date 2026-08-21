@@ -1,4 +1,5 @@
 import json
+import orjson
 import logging
 import traceback
 
@@ -7,7 +8,13 @@ from spe.common.serialization.serializationMode import SerializationMode
 
 
 def serializeToJSON(data):
+    # Retained for most pipeline functions for compatibility
     return json.dumps(data, default=jsonDefaultEncoder)
+
+
+def fastSerializeToJSONBytes(data) -> bytes:
+    # Orjson is much faster compared to stdlib json (but lacks loads functionality with custom hooks)
+    return orjson.dumps(data, default=jsonDefaultEncoder)
 
 
 def jsonDefaultEncoder(data):

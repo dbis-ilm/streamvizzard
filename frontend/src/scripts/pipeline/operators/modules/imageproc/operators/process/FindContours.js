@@ -7,7 +7,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _FindContours extends Definition {
     constructor(pathIdentifier){
-        super("FindContours", "Find Contours", pathIdentifier);
+        super("FindContours", "Find Contours", pathIdentifier,
+            "Extracts a list of contour objects from the input image.");
     }
 
     build(operator) {

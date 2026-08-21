@@ -29,7 +29,7 @@ export default {
 
   computed: {
     socketData() {
-      if(this.type === "output") return null; // Only receive IN socket data
+      if(!this.socket.input) return null; // Only receive IN socket data
       return this.socket.operator.monitor.socketDataIN;
     }
   },
@@ -41,7 +41,7 @@ export default {
 
       if(this.socketData != null) {
         max = this.socketData.max;
-        msg = this.socketData.count?.[this.index];
+        msg = this.socketData.count.at(this.socket.id) || 0;
       }
 
       if(msg > 0) {

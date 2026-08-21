@@ -5,7 +5,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _ImgSplit extends Definition {
     constructor(pathIdentifier) {
-        super("ImgSplit", "Img Split", pathIdentifier);
+        super("ImgSplit", "Img Split", pathIdentifier,
+            "Splits the input image into the individual color channels.");
     }
 
     build(operator) {

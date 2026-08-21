@@ -1,80 +1,96 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Optional, Dict
+from typing import TYPE_CHECKING, Dict
 
-from network.commands.commands import Command
+from network.commands.commands import Command, CommandRes
 from spe.common.configStorage import ConfigStorage
 
 if TYPE_CHECKING:
     from spe.runtime.runtimeManager import RuntimeManager
+    from network.server import NetworkMode
 
 
 class RetrieveStoredPipelines(Command):
-    def __init__(self):
-        super().__init__("listStoredPipelines")
+    def __init__(self, networkMode: NetworkMode):
+        super().__init__("listStoredPipelines", networkMode)
 
-    def handleCommand(self, rm: RuntimeManager, data: Dict) -> Optional[str]:
+    def handleCommand(self, rm: RuntimeManager, data: Dict) -> CommandRes:
         pipelines = ConfigStorage.listStoredPipelines()
 
-        return json.dumps(pipelines)
+        return CommandRes.okWithRes(json.dumps(pipelines))
 
 
 class RequestStoredPipeline(Command):
-    def __init__(self):
-        super().__init__("requestStoredPipeline")
+    def __init__(self, networkMode: NetworkMode):
+        super().__init__("requestStoredPipeline", networkMode)
 
-    def handleCommand(self, rm: RuntimeManager, data) -> Optional[str]:
-        pipeline = ConfigStorage.loadStoredPipeline(data)
+    def handleCommand(self, rm: RuntimeManager, data: Dict) -> CommandRes:
+        pipeline = ConfigStorage.loadStoredPipeline(data["name"])
 
-        return json.dumps(pipeline)
+        if pipeline is None:
+            return CommandRes.error("Couldn't load pipeline!")
+
+        return CommandRes.okWithRes(json.dumps(pipeline))
 
 
 class DeleteStoredPipeline(Command):
-    def __init__(self):
-        super().__init__("deleteStoredPipeline")
+    def __init__(self, networkMode: NetworkMode):
+        super().__init__("deleteStoredPipeline", networkMode)
 
-    def handleCommand(self, rm: RuntimeManager, data) -> Optional[str]:
-        removed = ConfigStorage.deleteStoredPipeline(data)
+    def handleCommand(self, rm: RuntimeManager, data: Dict) -> CommandRes:
+        removed = ConfigStorage.deleteStoredPipeline(data["name"])
 
-        return json.dumps(removed)
+        if not removed:
+            return CommandRes.error("Failed to remove pipeline!")
+
+        return CommandRes.ok()
 
 
 class StorePipeline(Command):
-    def __init__(self):
-        super().__init__("storePipeline")
+    def __init__(self, networkMode: NetworkMode):
+        super().__init__("storePipeline", networkMode)
 
-    def handleCommand(self, rm: RuntimeManager, data: Dict) -> Optional[str]:
+    def handleCommand(self, rm: RuntimeManager, data: Dict) -> CommandRes:
         stored = ConfigStorage.storePipeline(data["name"], data["data"])
 
-        return json.dumps(stored)
+        if not stored:
+            return CommandRes.error("Failed to store pipeline!")
+
+        return CommandRes.ok()
 
 
 class RetrieveStoredOperators(Command):
-    def __init__(self):
-        super().__init__("listStoredOperators")
+    def __init__(self, networkMode: NetworkMode):
+        super().__init__("listStoredOperators", networkMode)
 
-    def handleCommand(self, rm: RuntimeManager, data: Dict) -> Optional[str]:
+    def handleCommand(self, rm: RuntimeManager, data: Dict) -> CommandRes:
         ops = ConfigStorage.listStoredOperators()
 
-        return json.dumps(ops)
+        return CommandRes.okWithRes(json.dumps(ops))
 
 
 class DeleteStoredOperator(Command):
-    def __init__(self):
-        super().__init__("deleteStoredOperator")
+    def __init__(self, networkMode: NetworkMode):
+        super().__init__("deleteStoredOperator", networkMode)
 
-    def handleCommand(self, rm: RuntimeManager, data) -> Optional[str]:
-        removed = ConfigStorage.deleteStoredOperator(data)
+    def handleCommand(self, rm: RuntimeManager, data: Dict) -> CommandRes:
+        removed = ConfigStorage.deleteStoredOperator(data["name"])
 
-        return json.dumps(removed)
+        if not removed:
+            return CommandRes.error("Failed to delete operator preset!")
+
+        return CommandRes.ok()
 
 
 class StoreOperator(Command):
-    def __init__(self):
-        super().__init__("storeOperator")
+    def __init__(self, networkMode: NetworkMode):
+        super().__init__("storeOperator", networkMode)
 
-    def handleCommand(self, rm: RuntimeManager, data: Dict) -> Optional[str]:
+    def handleCommand(self, rm: RuntimeManager, data: Dict) -> CommandRes:
         stored = ConfigStorage.storeOperator(data)
 
-        return json.dumps(stored)
+        if not stored:
+            return CommandRes.error("Couldn't store operator preset!")
+
+        return CommandRes.ok()

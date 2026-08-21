@@ -1,13 +1,14 @@
-import json
-from typing import Optional
+from typing import Optional, Dict
 
 import cv2
 
-from spe.pipeline.operators.imageProc.dataTypes.image import Image
+from spe.pipeline.operators.imageProc.dataTypes.image import Image, ImageType
 from spe.pipeline.operators.operator import Operator
 from spe.common.tuple import Tuple
+from utils.utils import tryParseInt
 
 
+@Operator.requiresInput(ImageType())
 class Threshold(Operator):
     """
     Inputs: 1
@@ -23,9 +24,9 @@ class Threshold(Operator):
         self.modeRaw = 0
         self.mode = 0
 
-    def setData(self, data: json):
-        self.threshold = int(data["threshold"])
-        self.maxValue = int(data["maxVal"])
+    def setData(self, data: Dict):
+        self.threshold = tryParseInt(data["threshold"])
+        self.maxValue = tryParseInt(data["maxVal"])
 
         self.modeRaw = data["mode"]
 
@@ -44,10 +45,11 @@ class Threshold(Operator):
         return {"threshold": self.threshold, "maxVal": self.maxValue, "mode": self.modeRaw}
 
     def _execute(self, tupleIn: Tuple) -> Optional[Tuple]:
-        if not tupleIn.data[0].isGrey():
+        img: Image = tupleIn.data[0]
+
+        if not img.isGrey():
             return None
 
-        _, res = cv2.threshold(
-            tupleIn.data[0].mat, self.threshold, self.maxValue, self.mode)
+        _, res = cv2.threshold(img.mat, self.threshold, self.maxValue, self.mode)
 
         return self.createTuple((Image(res),))

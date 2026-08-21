@@ -2,14 +2,19 @@
   <div v-if="suggestions != null" class="sidebarAdvisor">
     <CollapseHeader :openedDir="'up'" class="sectionHeader" v-model="$streamvizzard.advisor.showSidebar" title="Advisions"/>
     <div class="sidebarAdvisorContent" v-show="$streamvizzard.advisor.showSidebar">
-      <div v-for="(suggestion, index) in suggestions" :key="suggestion.key"
-           style="margin-top: 10px;">
-        <div><b>{{ index + 1 }})</b> {{ suggestion.msg }}</div>
-        <div v-if="suggestion.ops != null">
-          <v-select v-auto-blur :options="suggestion.ops" label="name" placeholder="Suggested Operators"
-                    :searchable="false" @input="(async function() {await _onAdvisorOperatorSelect($event)})()"
-                    :clearable="false"></v-select>
+      <div v-for="(suggestion, index) in suggestions" :key="suggestion.key" style="margin-top: 10px;">
+        <div><b>{{ index + 1 }})</b> {{ suggestion.message }}</div>
+
+        <div v-if="suggestion instanceof AddOpAS">
+          <v-select v-auto-blur :options="suggestion.ops" :value="null" label="name" placeholder="Suggested Operators"
+                    :searchable="false" @input="(async function() {await _applyAddOpSuggestion(suggestion, $event)})()"
+                    :clearable="false" class="formInputField"/>
         </div>
+
+        <div v-if="suggestion instanceof AdjustParamAS">
+          <ButtonSec class="applyButton" label="Apply Parameters" @click="suggestion.apply(operator);"/>
+        </div>
+
       </div>
     </div>
   </div>
@@ -19,33 +24,35 @@
 
 import CollapseHeader from "@/components/interface/elements/base/CollapseHeader.vue";
 import SvOperator from "@/scripts/pipeline/operators/SvOperator";
+import {AddOpAS, AdjustParamAS} from "@/scripts/features/advisor/AdvisorSuggestion";
+import ButtonSec from "@/components/interface/elements/base/ButtonSec.vue";
 
 export default {
-  components: {CollapseHeader},
+  components: {ButtonSec, CollapseHeader},
   props: {
     operator: {type: SvOperator, required: true},
   },
 
   computed: {
+    AdjustParamAS() {
+      return AdjustParamAS
+    },
+
+    AddOpAS() {
+      return AddOpAS
+    },
+
     suggestions() {
       return this.operator.advisorSuggestions;
     }
   },
 
   methods: {
-    async _onAdvisorOperatorSelect(event) {
-      // Find selected operator by path
-
-      let def = this.$streamvizzard.modules.getOperatorDefinition(event.path);
-
-      if(def == null) return;
-
-      // Instantiate operator
-
-      let op = await this.$streamvizzard.pipeline.createOperator(def, {x: this.operator.posX - 60, y: this.operator.posY + 60});
-
-      if(op != null) this.$streamvizzard.editor.selectOperator(op);
-    },
+    /** @param {AddOpAS} suggestion
+     * @param {{name: String, path: String}} op */
+    async _applyAddOpSuggestion(suggestion, op) {
+      await suggestion.apply(op, this.operator);
+    }
   }
 }
 
@@ -66,6 +73,13 @@ export default {
 
 .sidebarAdvisorContent {
   padding: 0 10px 5px;
+}
+
+.sidebarAdvisor .applyButton {
+  width: 250px;
+  margin: 5px auto 0;
+
+  border-color: var(--warning-color);
 }
 
 </style>

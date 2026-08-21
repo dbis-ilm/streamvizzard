@@ -1,8 +1,7 @@
-import json
 import logging
 import socket
 import traceback
-from typing import Optional, Callable
+from typing import Optional, Callable, Dict
 
 from spe.pipeline.operators.source import Source
 
@@ -13,7 +12,7 @@ class SocketServer(Source):
 
         self._socket = SocketServerImpl()
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
         ipOrPortChanged = (self._socket.port != data["port"]) or (self._socket.ip != data["ip"])
 
         self._socket.port = data["port"]
@@ -33,8 +32,9 @@ class SocketServer(Source):
 
     def _runSource(self):
         while self.isRunning():
-            self._socket.awaitConnection()
+            self._socket.ensureConnection()
 
+            # Loop until client disconnects
             self._socket.receiveData(self._onDataReceived)
 
         self._socket.close()
@@ -44,25 +44,34 @@ class SocketServer(Source):
 
 
 class SocketServerImpl:
+    # Only accepts one client connection!
+
     def __init__(self):
         self.port = 0
         self.ip = ""
         self.maxBytes = 0
 
         self.socket: Optional[socket.socket] = None
-        self.connection = None
+        self.connection: Optional[socket.socket] = None
 
-    def awaitConnection(self):
+    def ensureConnection(self):
         # Creates the socket and awaits a client connection
 
-        self.socket = socket.socket()
-        self.socket.bind((self.ip, self.port))
-        self.socket.listen(1)
+        if self.socket is None:
+            self.socket = socket.socket()
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.socket.bind((self.ip, self.port))
+            self.socket.listen(1)
+
+        if self.connection is not None:
+            return
 
         try:
             self.connection, address = self.socket.accept()
-        except:  # In case the socket is closed, and we do not have a connection yet
-            ...
+        except OSError:  # In case the socket is closed, and we do not have a connection yet
+            pass
+        except Exception:
+            logging.log(logging.ERROR, traceback.format_exc())
 
     def receiveData(self, receiveCallback: Callable[[bytes], None]):
         while self.connection is not None:
@@ -70,24 +79,32 @@ class SocketServerImpl:
                 data = self.connection.recv(self.maxBytes)
 
                 if not data:
-                    self.connection.close()
-
                     break
 
                 receiveCallback(data)
+            except ConnectionError:
+                break
             except Exception:
                 logging.log(logging.ERROR, traceback.format_exc())
 
                 break
 
+        if self.connection is not None:
+            self.connection.close()
+            self.connection = None
+
     def writeData(self, data: bytes):
         if self.connection is not None:
             try:
-                self.connection.send(data)
-            except ConnectionAbortedError:
+                self.connection.sendall(data)
+            except ConnectionError:
+                self.connection.close()
                 self.connection = None
             except Exception:
                 logging.log(logging.ERROR, traceback.format_exc())
+
+                self.connection.close()
+                self.connection = None
 
     def close(self):
         try:

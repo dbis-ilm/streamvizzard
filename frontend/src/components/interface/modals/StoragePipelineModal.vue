@@ -102,18 +102,12 @@ export default {
       this.loadingPipeline = true; // Sometimes DOM is not updated due to some weird Vue interaction with async?
       SvInstance.pipeline.pipelineMetaData.updateName(pipeline);
 
-      let ths = this;
-
-      setTimeout(function() {
-        Services.Network.requestStoredPipeline(pipeline).then(async function(loadedPipe) {
-          if(loadedPipe == null || loadedPipe.length === 0) {
-            ths.errorMessage = "Pipeline couldn't be loaded!"
-            ths.loadingPipeline = false;
-
-            return;
-          }
-
-          await ths._performPipelineLoad(JSON.parse(loadedPipe));
+      setTimeout(() => {
+        Services.Network.requestStoredPipeline({"name": pipeline}).then(async (loadedPipe) => {
+          await this._performPipelineLoad(JSON.parse(loadedPipe));
+        }).catch(() => {
+          this.errorMessage = "Pipeline couldn't be loaded!";
+          this.loadingPipeline = false;
         });
       }, 100); // Give some time to update UI with loading, otherwise vue is sometimes missing the DOM updates...
     },
@@ -172,16 +166,16 @@ export default {
 
         this.hide();
       } else {
-        let ths = this;
         this.loadingPipeline = true;
+        this.errorMessage = "";
 
-        Services.Network.storePipeline({"name": this.selectedPipeline, "data": saveData}).then(function (res) {
-          ths.loadingPipeline = false;
-
-          if(res) {
-            ths.selectedPipeline = "";
-            ths.hide();
-          } else ths.errorMessage = "Couldn't store pipelineState!";
+        Services.Network.storePipeline({"name": this.selectedPipeline, "data": saveData}).then(() => {
+          this.selectedPipeline = "";
+          this.hide();
+        }).catch(() => {
+          this.errorMessage = "Couldn't store pipeline!";
+        }).finally(() => {
+          this.loadingPipeline = false;
         });
       }
     },
@@ -210,13 +204,16 @@ export default {
     },
 
     _confirmServerPipelineDeletion(pipeline) {
-      let ths = this;
       let storageList = this.$refs.storageList;
 
-      Services.Network.deleteStoredPipeline(pipeline).then(function(res) {
-        if(res != null) storageList.updateDataArray(storageList.dataArray.filter(v => v !== pipeline));
+      this.errorMessage = "";
 
-        ths.$modal.hide('storageConfirmModal');
+      Services.Network.deleteStoredPipeline({"name": pipeline}).then(() => {
+        storageList.updateDataArray(storageList.dataArray.filter(v => v !== pipeline));
+      }).catch(() => {
+        this.errorMessage = "Failed to delete pipeline!";
+      }).finally(() => {
+        this.$modal.hide('storageConfirmModal');
       });
     },
 
@@ -232,16 +229,10 @@ export default {
         storageList.clearSearch();
 
         Services.Network.listStoredPipelines().then(function(pipelines) {
-          storageList.loading = false;
-
-          if(pipelines == null) { // Server not connected
-            storageList.errorMessage = "Couldn't load pipelines!";
-
-            return;
-          }
-
           storageList.updateDataArray(pipelines);
-        });
+        }).catch(() => {
+          storageList.errorMessage = "Couldn't load pipelines!";
+        }).finally(() => { storageList.loading = false; });
       }
     }
   },

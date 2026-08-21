@@ -6,7 +6,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _TumblingWindowTime extends Definition {
     constructor(pathIdentifier){
-        super("TumblingWindowTime", "Tumb. Window Time", pathIdentifier);
+        super("TumblingWindowTime", "Tumb. Window Time", pathIdentifier,
+            "Emits non-overlapping batches of input data tuples based on a defined time interval.");
     }
 
     build(operator) {

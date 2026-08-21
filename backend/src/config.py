@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 
-VERSION = "0.9.6"
+VERSION = "0.9.9"
 NETWORKING_SERVER_PORT = 8000
 NETWORKING_SOCKET_PORT = 8001
 
@@ -16,17 +16,30 @@ class Config:
 
         self.NETWORK_ENABLED = True
 
+        # How long [seconds] the network manager waits at max to bundle packages to transmit
+        self.NETWORK_MAX_BATCH_DELAY = 0.1
+
+        # Max batch size [1MB] to reduce latency and avoid huge messages
+        self.NETWORK_MAX_BATCH_SIZE = 1024 * 1024
+
         # --------------------- MONITORING ----------------------
 
         self.MONITORING_ENABLED = True
 
-        # Smooth factor [0,1] when calculating statistics for an operator [Exponential Moving Average]
-        # The lower the value, the less impact of new values and the smoother [and slower] adaptations to changes
-        self.MONITORING_OPERATOR_SMOOTH_FACTOR = 0.25
+        # Time memory for EMA smooth, controls how quickly EMA adapts to new values (full reset after x seconds)
+        self.MONITORING_EMA_WINDOW = 2
 
-        # The size of the sliding window [seconds] to calculate the connection throughput
-        # The lower the window, the faster the reaction to significant tp changes, but also higher fluctuation
-        self.MONITORING_CONNECTION_THROUGHPUT_WINDOW = 2.5
+        # Percentual change to last throughput to trigger adaptive window to more quickly react to changing tps
+        self.MONITORING_CONNECTION_WINDOW_THRESHOLD = 5  # Higher=more sensible, Lower=less adaptiveness
+
+        # Required interval [seconds] of the throughput window (adaptive in range [min,max]) for calculation.
+        self.MONITORING_CONNECTION_WINDOW_INTERVAL = [0.25, 2.5]  # Higher=less sensible to changes but more robust
+
+        # Required tuples within the throughput window (adaptive in range [min,max]) for calculation.
+        self.MONITORING_CONNECTION_WINDOW_COUNT = [5, 25]  # Higher=less sensible to changes but more robust
+
+        # How often the inspection recalculates the data structure of input tuples to verify its integrity
+        self.MONITORING_INSPECT_UPDATE_INTERVAL = 5  # Seconds
 
         # At which rate [seconds] updates to the frontend monitor will be sent
         self.MONITORING_UPDATE_INTERVAL = 0.1

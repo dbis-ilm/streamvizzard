@@ -8,7 +8,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _UDO extends Definition {
     constructor(pathIdentifier){
-        super("UDO", "User Defined Operator", pathIdentifier);
+        super("UDO", "User Defined Operator", pathIdentifier,
+            "User-defined operator for custom, stateful input tuple handling.");
     }
 
     build(operator) {

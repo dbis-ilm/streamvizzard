@@ -18,7 +18,7 @@ export default {
 
   methods: {
     change(e){
-      this.param.setValue(e.target.value);
+      this.param.setValue(Number(e.target.value));
       this.$forceUpdate(); // Force update in case value is clamped back to original which does not update input field
     },
   }

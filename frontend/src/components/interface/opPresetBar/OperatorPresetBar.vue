@@ -1,5 +1,5 @@
 <template>
-  <div class="container dock" :style="opened ? 'width: 250px;' : ''">
+  <div class="container dock left" :style="opened ? 'width: 250px;' : ''" v-track-dom-rect="$streamvizzard.interface.opPresetBarViewRect">
     <div class="content" v-if="opened">
       <div class="title">Operator Presets</div>
       <hr>
@@ -15,7 +15,7 @@
       <NotificationModal :modalName="'opPresetConfirmModal'" :xShift="0.375"></NotificationModal>
     </div>
 
-    <div @click="_toggleWindow" :class="'openCloseButton left ' + (opened ? 'opened' : 'closed')" title="Open/Close the operator preset window">
+    <div @click="_toggleWindow" :class="'openCloseButton ' + (opened ? 'opened' : 'closed')" title="Open/Close the operator preset window">
       <i :class="'bi ' + (opened ? 'bi-caret-left-fill' : 'bi-caret-right-fill')"></i>
     </div>
 </div>
@@ -94,8 +94,11 @@ export default Vue.extend ({
     },
 
     _confirmDelete(elm) {
+      this.$refs.opPresetList.errorMessage = "";
+
       Services.OpPresetService.deletePreset(elm.name).then((result) => {
         if(result) this._updateOperatorPresets();
+        else this.$refs.opPresetList.errorMessage = "Failed to delete preset!";
 
         this.$modal.hide('opPresetConfirmModal');
       });

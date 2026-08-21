@@ -1,7 +1,7 @@
-import json
 import random
 import string
 import time
+from typing import Dict
 
 from spe.pipeline.operators.source import Source
 
@@ -13,7 +13,7 @@ class RandomData(Source):
         self.rate = 0
         self.limitRate = True
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
         self.rate = data["rate"]
         self.limitRate = data["limitRate"]
 

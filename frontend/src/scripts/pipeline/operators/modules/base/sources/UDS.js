@@ -7,7 +7,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _UDS extends Definition {
     constructor(pathIdentifier){
-        super("UDS", "User Defined Source", pathIdentifier, true);
+        super("UDS", "User Defined Source", pathIdentifier,
+            "User-defined source for custom, stateful data emission handling.", true);
     }
 
     build(operator) {

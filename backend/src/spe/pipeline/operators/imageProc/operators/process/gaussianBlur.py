@@ -1,13 +1,14 @@
-import json
-from typing import Optional
+from typing import Optional, Dict
 
 import cv2
 
-from spe.pipeline.operators.imageProc.dataTypes.image import Image
+from spe.pipeline.operators.imageProc.dataTypes.image import Image, ImageType
 from spe.pipeline.operators.operator import Operator
 from spe.common.tuple import Tuple
+from utils.utils import tryParseFloat, tryParseInt
 
 
+@Operator.requiresInput(ImageType())
 class GaussianBlur(Operator):
     """
     Inputs: 1
@@ -20,23 +21,24 @@ class GaussianBlur(Operator):
         self.kernelX = 0
         self.kernelY = 0
 
-        self.sigmaX = 0
-        self.sigmaY = 0
+        self.sigmaX = 0.0
+        self.sigmaY = 0.0
 
         self.sigmaXKernel = None
         self.sigmaYKernel = None
 
-    def setData(self, data: json):
-        self.kernelX = data["kernelX"]
-        self.kernelY = data["kernelY"]
-        self.sigmaX = data["sigmaX"]
-        self.sigmaY = data["sigmaY"]
+    def setData(self, data: Dict):
+        self.kernelX = tryParseInt(data["kernelX"])
+        self.kernelY = tryParseInt(data["kernelY"])
+        self.sigmaX = tryParseFloat(data["sigmaX"])
+        self.sigmaY = tryParseFloat(data["sigmaY"])
 
     def getData(self) -> dict:
         return {"kernelX": self.kernelX, "kernelY": self.kernelY, "sigmaX": self.sigmaX, "sigmaY": self.sigmaY}
 
     def _execute(self, tupleIn: Tuple) -> Optional[Tuple]:
-        res = cv2.GaussianBlur(tupleIn.data[0].mat, (self.kernelX,
-                               self.kernelY), self.sigmaX, self.sigmaY)
+        img: Image = tupleIn.data[0]
+
+        res = cv2.GaussianBlur(img.mat, [self.kernelX, self.kernelY], self.sigmaX, None, self.sigmaY)
 
         return self.createTuple((Image(res),))

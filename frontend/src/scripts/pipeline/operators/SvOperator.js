@@ -60,6 +60,8 @@ export default class SvOperator extends TemplateHost {
         // Received data
 
         this.errorMsg = null;
+
+        /** @type {Array<AdvisorSuggestion>|null} */
         this.advisorSuggestions = null;
 
         // Config
@@ -168,16 +170,24 @@ export default class SvOperator extends TemplateHost {
         else return (id < this.outputs.length && this.outputs.length > 0) ? this.outputs[id] : null;
     }
 
-    /** @return {Generator<SvSocket>} */
-    *getAllSockets() {
-        for(let input of this.inputs) yield input;
+    /** @param {boolean} includeIns
+     *  @param {boolean} includeOuts
+     *  @return {Generator<SvSocket>} */
+    *getAllSockets(includeIns = true, includeOuts = true) {
+        if(includeIns) {
+            for(let input of this.inputs) yield input;
+        }
 
-        for(let output of this.outputs) yield output;
+        if(includeOuts) {
+            for(let output of this.outputs) yield output;
+        }
     }
 
-    /** @return {Generator<SvConnection>} */
-    *getAllConnections() {
-        for(let sock of this.getAllSockets()) {
+    /** @param {boolean} includeIns
+     *  @param {boolean} includeOuts
+     * @return {Generator<SvConnection>} */
+    *getAllConnections(includeIns = true, includeOuts = true) {
+        for(let sock of this.getAllSockets(includeIns, includeOuts)) {
             for(let con of sock.connections) {
                 yield con;
             }
@@ -218,6 +228,12 @@ export default class SvOperator extends TemplateHost {
         for(let param of this.params) data[param.key] = param.getValue();
 
         return data;
+    }
+
+    // ----------------------------------------------------- Advisor ---------------------------------------------------
+
+    updateAdvisorSuggestions(suggestions) {
+        this.advisorSuggestions = suggestions;
     }
 
     // ----------------------------------------------------- Config ----------------------------------------------------

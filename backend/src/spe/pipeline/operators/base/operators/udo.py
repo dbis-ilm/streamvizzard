@@ -1,5 +1,4 @@
-import json
-from typing import Optional
+from typing import Optional, Dict
 
 from spe.pipeline.operators.operator import Operator
 from spe.common.tuple import Tuple
@@ -13,7 +12,7 @@ class UDO(Operator):
         self.code = None
         self._instance = None
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
         socksIn = data["inputs"]
         socksOut = data["outputs"]
 

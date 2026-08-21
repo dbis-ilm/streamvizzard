@@ -19,7 +19,7 @@ class IlmCompiler:
         self.opNameLookup = realOpNames
         self.costModelPath = costModelPath
 
-    def compile(self, duration: float, sourceCfgs: json, outputPath: str):
+    def compile(self, duration: float, sourceCfgs: Dict, outputPath: str):
         # Convert the pipeline into the intermediate language model
 
         # --------- Base Data ---------

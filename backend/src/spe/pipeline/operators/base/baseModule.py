@@ -1,71 +1,49 @@
-import json
-import numbers
+from typing import Optional
 
+from spe.common.dataType import FloatType, StringType, ArrayType, IntegerType, NoneType, DictType, TupleType
 from spe.pipeline.operators.base.dataTypes.scatterplotD import ScatterplotD
-from spe.pipeline.operators.module import Module, MonitorDataType
+from spe.pipeline.operators.module import Module
+from spe.runtime.monitor.dataInspectType import DataInspectType
+from spe.runtime.monitor.dataDisplayType import DataDisplayType
 from spe.runtime.monitor.dataInspect import DataInspect
 
 
-class DictInspect(DataInspect):
-    def getData(self, data):
-        if self.inspectData is None:
-            return data
+class ObjectInspect(DataInspect):
+    """ Supports Tuple, List, Dict """
 
-        current = data
+    def _getStructure(self, data, parentEntry: Optional[DataInspect.Entry] = None) -> DataInspect.Entry:
+        """ Fetches all entries from this object (recursive) and returns the object as a root node with children """
 
-        for i in range(len(self.inspectData)):
-            el = self.inspectData[i]
+        if isinstance(data, dict):
+            if parentEntry is None:
+                parentEntry = DataInspect.Entry.getRootEntry(dict.__name__)
 
-            if isinstance(el, list):
-                current = current[el[0]]
-            else:
-                current = current[el]
+            for key in data.keys():
+                dataPortion = data[key]
+                dataType = type(dataPortion).__name__
 
-        return current
+                newEntry = DataInspect.Entry(key, dataType, lambda name, d: d[name])  # Dict access (name=key)
 
-    def _selectInternal(self, selected):
-        if selected is None or selected == "":
-            self.inspectData = None
-        else:
-            sp = selected.split(">")
+                if not parentEntry.addChild(newEntry):
+                    continue  # Size limit reached, stop following this entry
 
-            for i in range(len(sp)):
-                val = sp[i]
+                self._getStructure(dataPortion, newEntry)  # Recursive
+        elif isinstance(data, (list, tuple)):
+            if parentEntry is None:
+                parentEntry = DataInspect.Entry.getRootEntry(type(data).__name__)
 
-                if val.startswith("[") and val.endswith("]"):
-                    sp[i] = [int(val[1:len(val) - 1])]
+            for v in range(len(data)):
+                dataPortion = data[v]
+                dataType = type(dataPortion).__name__
 
-            self.inspectData = sp
+                newEntry = DataInspect.Entry(str(v), dataType, lambda name, d: d[int(name)])  # Array access (name=index)
 
-    def _getStructureInternal(self, data) -> json:
-        keys = self._get_keys(data, {})
+                if not parentEntry.addChild(newEntry):
+                    continue  # Size limit reached, stop following this entry
 
-        return json.dumps(keys)
+                self._getStructure(dataPortion, newEntry)  # Recursive
 
-    def _get_keys(self, dl, keyDic):
-        if isinstance(dl, dict):
-            for key in dl.keys():
-                d = self._get_keys(dl[key], {})
-
-                if d is None:
-                    d = type(dl[key]).__name__
-
-                keyDic[key] = d
-
-            return keyDic
-        elif isinstance(dl, list):
-            arr = []
-
-            for v in dl:
-                d = self._get_keys(v, {})
-
-                if d is None:
-                    d = type(v).__name__
-
-                arr.append(d)
-
-            return arr
-        return None
+        return parentEntry
 
 
 class BaseModule(Module):
@@ -73,10 +51,7 @@ class BaseModule(Module):
         super(BaseModule, self).__init__("Base")
 
     def initialize(self):
-        self.registerOp("spe.pipeline.operators.base.operators.transform.toInt", "ToInt", "Operators/Transform/ToInt")
-        self.registerOp("spe.pipeline.operators.base.operators.transform.toBool", "ToBool", "Operators/Transform/ToBool")
-        self.registerOp("spe.pipeline.operators.base.operators.transform.toFloat", "ToFloat", "Operators/Transform/ToFloat")
-        self.registerOp("spe.pipeline.operators.base.operators.transform.toString", "ToString", "Operators/Transform/ToString")
+        self.registerOp("spe.pipeline.operators.base.operators.transform.cast", "Cast", "Operators/Transform/Cast")
         self.registerOp("spe.pipeline.operators.base.operators.transform.stringSplit", "StringSplit", "Operators/Transform/StringSplit")
         self.registerOp("spe.pipeline.operators.base.operators.transform.combine", "Combine", "Operators/Transform/Combine")
         self.registerOp("spe.pipeline.operators.base.operators.transform.parseJSON", "ParseJSON", "Operators/Transform/ParseJSON")
@@ -92,48 +67,51 @@ class BaseModule(Module):
         self.registerOp("spe.pipeline.operators.base.sources.readFolder", "ReadFolder", "Sources/ReadFolder")
         self.registerOp("spe.pipeline.operators.base.sources.randomData", "RandomData", "Sources/RandomData")
         self.registerOp("spe.pipeline.operators.base.sources.socketServer", "SocketServer", "Sources/SocketServer")
-        self.registerOp("spe.pipeline.operators.base.sources.socketTextSSource", "SocketTextSSource", "Sources/SocketTextSSource")
-        self.registerOp("spe.pipeline.operators.base.sinks.socketTextSSink", "SocketTextSSink", "Sinks/SocketTextSSink")
+        self.registerOp("spe.pipeline.operators.base.sources.textSocketServer", "TextSocketServer", "Sources/TextSocketServer")
+        self.registerOp("spe.pipeline.operators.base.sinks.socketServer", "SocketServer", "Sinks/SocketServer")
+        self.registerOp("spe.pipeline.operators.base.sinks.textSocketServer", "TextSocketServer", "Sinks/TextSocketServer")
         self.registerOp("spe.pipeline.operators.base.sources.kafkaSource", "KafkaSource", "Sources/KafkaSource")
         self.registerOp("spe.pipeline.operators.base.sinks.kafkaSink", "KafkaSink", "Sinks/KafkaSink")
         self.registerOp("spe.pipeline.operators.base.sinks.fileSink", "FileSink", "Sinks/FileSink")
 
         self.registerOp("spe.pipeline.operators.base.operators.windows.tumblingWindowCount", "TumblingWindowCount", "Operators/Windows/TumblingWindowCount")
         self.registerOp("spe.pipeline.operators.base.operators.windows.tumblingWindowTime", "TumblingWindowTime", "Operators/Windows/TumblingWindowTime")
+        self.registerOp("spe.pipeline.operators.base.operators.windows.slidingWindowCount", "SlidingWindowCount", "Operators/Windows/SlidingWindowCount")
+        self.registerOp("spe.pipeline.operators.base.operators.windows.slidingWindowTime", "SlidingWindowTime", "Operators/Windows/SlidingWindowTime")
         self.registerOp("spe.pipeline.operators.base.operators.windows.windowCollect", "WindowCollect", "Operators/Windows/WindowCollect")
 
-        numberDT = MonitorDataType("NUMBER", lambda x: isinstance(x, numbers.Number))
+        noneDT = DataDisplayType("NONE", [DataDisplayType.TypeEntry(NoneType())])
+        noneDT.registerDisplayMode(0, lambda x, y: x)  # Raw value
+        self.registerMonitorDataType(noneDT)
+
+        numberDT = DataDisplayType("NUMBER", [
+            DataDisplayType.TypeEntry(FloatType()),
+            DataDisplayType.TypeEntry(IntegerType())
+        ])
         numberDT.registerDisplayMode(0, lambda x, y: round(x, 6))  # Raw value (max 6 digits)
-        numberDT.registerDisplayMode(1, lambda x, y: ScatterplotD.fromElement(x))  # Timeline -> handled by client
+        numberDT.registerDisplayMode(1, lambda x, y: ScatterplotD.fromElement(x, y))  # Timeline -> handled by client
         self.registerMonitorDataType(numberDT)
 
-        strDT = MonitorDataType("STRING", lambda x: isinstance(x, str))  # Raw value
-        strDT.registerDisplayMode(0, lambda x, y: x)
+        strDT = DataDisplayType("STRING", [DataDisplayType.TypeEntry(StringType())])
+        strDT.registerDisplayMode(0, lambda x, y: x)  # Raw value
         strDT.registerDisplayMode(1, lambda x, y: len(x))
         self.registerMonitorDataType(strDT)
 
-        numberArrayDT = MonitorDataType("ARRAY_NUMBER", lambda x: MonitorDataType.isArrayOf(x, numbers.Number, True, True))
+        numberArrayDT = DataDisplayType("ARRAY_NUMBER", [
+            DataDisplayType.TypeEntry(ArrayType(entryType=NoneType())),  # Array with None values
+            DataDisplayType.TypeEntry(ArrayType(entryType=None)),  # Empty Array / Unknown types
+            DataDisplayType.TypeEntry(ArrayType(entryType=IntegerType())),
+            DataDisplayType.TypeEntry(ArrayType(entryType=FloatType()))
+        ])
         numberArrayDT.registerDisplayMode(0, lambda x, y: len(x))  # Count
-        numberArrayDT.registerDisplayMode(1, lambda x, y: ScatterplotD.fromElements(x))  # Time-Series
+        numberArrayDT.registerDisplayMode(1, lambda x, y: ScatterplotD.fromElements(x, y))  # Time-Series
         self.registerMonitorDataType(numberArrayDT)
 
-        numberWindowDT = MonitorDataType("WINDOW_NUMBER", lambda x: MonitorDataType.isWindowOf(x, numbers.Number))
-        numberWindowDT.registerDisplayMode(0, lambda x, y: x.getCount())  # Count
-        numberWindowDT.registerDisplayMode(1, lambda x, y: ScatterplotD.fromElements(BaseModule.numberWindowToTimeSeries(x, y)))
-        self.registerMonitorDataType(numberWindowDT)
-
-        objectDT = MonitorDataType("OBJECT_INSPECT", lambda x: isinstance(x, dict) or isinstance(x, list))
-        objectDT.registerInspect(DictInspect)
+        objectDT = DataInspectType("DICT_INSPECT", [DataDisplayType.TypeEntry(DictType(), True)], ObjectInspect)
         self.registerMonitorDataType(objectDT)
 
-    @staticmethod
-    def numberWindowToTimeSeries(window, settings):
-        data = []
+        objectDT = DataInspectType("ARRAY_INSPECT", [DataDisplayType.TypeEntry(ArrayType(), True)], ObjectInspect)
+        self.registerMonitorDataType(objectDT)
 
-        for t in range(0, window.getCount()):
-            d = window.getDataAt(t)
-            tup = window.getTupleAt(t)
-
-            data.append([tup.eventTime, d])
-
-        return data
+        objectDT = DataInspectType("TUPLE_INSPECT", [DataDisplayType.TypeEntry(TupleType(), True)], ObjectInspect)
+        self.registerMonitorDataType(objectDT)

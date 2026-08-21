@@ -49,7 +49,7 @@ class NativeCodeExtractor:
     def fromRawCode(op: Operator, rawCode: str) -> Optional[NativeCodeExtractor]:
         extr = NativeCodeExtractor(op)
 
-        extr.targetAst = ast.parse(textwrap.dedent(rawCode))
+        extr.targetAst = NativeCodeExtractor.rawCodeToAST(rawCode)
 
         if extr.targetAst is None:
             return None
@@ -75,11 +75,11 @@ class NativeCodeExtractor:
             if extractedInternalClasses is None:
                 return None
 
-            importCode = ast.unparse(importRes.toImportAst(skipInternal=True))
+            importCode = self.rawCodeFromAST(importRes.toImportAst(skipInternal=True))
 
             bodyAST = importRes.targetAst
 
-            bodyCode = ast.unparse(bodyAST)
+            bodyCode = self.rawCodeFromAST(bodyAST)
 
             return NativeCodeExtractor.Result(importCode, bodyCode, extractedInternalClasses)
 
@@ -378,13 +378,21 @@ class NativeCodeExtractor:
 
         codeAST = ReplaceOrAddNamedKeyword().visit(codeAST)
 
-        return ast.unparse(codeAST)
+        return NativeCodeExtractor.rawCodeFromAST(codeAST)
 
     @staticmethod
     def toggleWarnings(warnings: bool):
         global _printCodeExtractorWarnings
 
         _printCodeExtractorWarnings = warnings
+
+    @staticmethod
+    def rawCodeToAST(rawCode: str):
+        return ast.parse(textwrap.dedent(rawCode))
+
+    @staticmethod
+    def rawCodeFromAST(astObj: Module):
+        return ast.unparse(astObj)
 
 
 class ImportExtractor:
@@ -638,8 +646,8 @@ class ClassExtractor:
 
             return None
 
-        bodyCode = ast.unparse(importRes.targetAst)
-        importCode = ast.unparse(importRes.toImportAst())
+        bodyCode = NativeCodeExtractor.rawCodeFromAST(importRes.targetAst)
+        importCode = NativeCodeExtractor.rawCodeFromAST(importRes.toImportAst())
 
         return ClassExtractor.Result(self.className, importCode, bodyCode, importRes.hasInternalImports())
 
@@ -690,8 +698,8 @@ class ModuleExtractor:
 
             return None
 
-        bodyCode = ast.unparse(importRes.targetAst)
-        importCode = ast.unparse(importRes.toImportAst())
+        bodyCode = NativeCodeExtractor.rawCodeFromAST(importRes.targetAst)
+        importCode = NativeCodeExtractor.rawCodeFromAST(importRes.toImportAst())
 
         return ModuleExtractor.Result(importCode, bodyCode, importRes.hasInternalImports())
 

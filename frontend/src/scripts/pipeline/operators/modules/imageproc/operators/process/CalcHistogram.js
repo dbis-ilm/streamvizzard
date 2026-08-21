@@ -6,7 +6,8 @@ import {anySocket} from "@/scripts/pipeline/operators/modules";
 
 export default class _CalcHistogram extends Definition {
     constructor(pathIdentifier){
-        super("CalcHistogram", "Calc Histogram", pathIdentifier);
+        super("CalcHistogram", "Calc Histogram", pathIdentifier,
+            "Calculates a histogram of the color distribution in the input image.");
     }
 
     build(operator) {

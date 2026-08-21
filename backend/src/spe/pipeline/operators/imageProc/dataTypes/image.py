@@ -6,13 +6,14 @@ from typing import Any, Dict, Optional, Type
 
 import cv2
 import numpy as np
+from cv2.typing import MatLike
 
 from spe.common.dataType import DataType
 from spe.common.serialization.serializationMode import SerializationMode
 
 
 class Image:
-    def __init__(self, mat):
+    def __init__(self, mat: MatLike):
         self.mat = mat
 
     def getWidth(self):
@@ -84,5 +85,11 @@ class ImageType(DataType):
         def fromData(self, data: Any, checkUniformity: bool = False) -> DataType:
             return ImageType(self)
 
-    def __init__(self, definition: ImageDTD):
+    def __init__(self, definition: Optional[ImageDTD] = None):
+        if definition is None:
+            definition = DataType.getDefinitionByName(ImageType.name)
+
         super().__init__(definition, uniform=True)
+
+
+DataType.register(ImageType.ImageDTD())

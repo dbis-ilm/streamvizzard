@@ -1,6 +1,5 @@
-import json
 import time
-from typing import List
+from typing import List, Dict
 
 from spe.pipeline.operators.source import Source
 from spe.runtime.compiler.codegeneration.frameworks.pyFlink.pyFlinkStatics import pyFlinkRateLimiterOpDef, \
@@ -21,7 +20,7 @@ class TextFile(Source):
         self.rate = 0
         self.limitRate = False
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
         self.path = data["path"]
         self.repeat = data["repeat"]
         self.rate = max(0, data["rate"])
@@ -45,9 +44,10 @@ class TextFile(Source):
                 with open(self.path) as file:
                     currentPath = self.path
 
-                    while line := file.readline():
-                        if not self.isRunning() \
-                                or currentPath != self.path:
+                    while (line := file.readline()) and self.isRunning():
+                        if currentPath != self.path:
+                            init = False
+
                             break
 
                         line = line.strip()
@@ -66,11 +66,6 @@ class TextFile(Source):
     # -------------------------- Compilation -------------------------
 
     def getCompileSpecs(self) -> List[CompileOpSpecs]:
-        def verifyFlinkCompatibility() -> bool:
-            # Repeat not supported
-
-            return not self.repeat
-
         def getPyFlinkCode(compileConfig):
             from spe.runtime.compiler.codegeneration.frameworks.pyFlink.pyFlinkCodeTemplate import PyFlinkCodeTemplate
 
@@ -107,5 +102,5 @@ class TextFile(Source):
                                [CompileLanguage.PYTHON],
                                [CompileComputeMode.CPU],
                                [CompileParallelism.SINGLE_NODE, CompileParallelism.DISTRIBUTED],
-                               supportedCheck=verifyFlinkCompatibility,
+                               supportedCheck=lambda: not self.repeat,
                                compileFunction=CodeTemplateCOF(CodeTemplateCOF.Type.SOURCE, getPyFlinkCode))]

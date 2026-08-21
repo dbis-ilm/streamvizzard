@@ -7,6 +7,7 @@ import VModal from 'vue-js-modal';
 import VueSlider from 'vue-slider-component'
 import autoBlur from '@/scripts/tools/directives/AutoBlurInputDirective';
 import draggable from "@/scripts/tools/directives/DraggableDirective";
+import trackDomRect from "@/scripts/tools/directives/TrackDOMRectDirective";
 
 Vue.config.productionTip = false;
 
@@ -28,6 +29,7 @@ Vue.component("vue-slider", VueSlider);
 
 Vue.directive('auto-blur', autoBlur);
 Vue.directive('draggable', draggable);
+Vue.directive('track-dom-rect', trackDomRect);
 
 import {SvInstance} from "@/scripts/StreamVizzard";
 Vue.prototype.$streamvizzard = SvInstance;

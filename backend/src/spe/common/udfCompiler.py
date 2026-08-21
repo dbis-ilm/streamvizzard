@@ -2,6 +2,7 @@ import re
 from typing import Callable, Optional
 
 from spe.common.dataType import DataType
+from spe.runtime.compiler.codegeneration.nativeCodeExtractor import NativeCodeExtractor, ImportExtractor
 
 
 def instantiateUserDefinedClass(operator, code, oldInstance):
@@ -51,17 +52,18 @@ def instantiateUserDefinedClass(operator, code, oldInstance):
 
 
 def instantiateUserDefinedFunction(operator, rawCode) -> Optional[Callable]:
-    code = ""
+    # Extract imports from the code
+    res = ImportExtractor.extractUsedImports(None, NativeCodeExtractor.rawCodeToAST(rawCode), True)
 
-    # TODO: We could optimize execution by extracting imports with AST
-    lines = rawCode.split("\n")
+    importCode = NativeCodeExtractor.rawCodeFromAST(res.toImportAst(skipInternal=False))
+    bodyCode = NativeCodeExtractor.rawCodeFromAST(res.targetAst)
 
-    code += "def func(input):\n"
+    code = importCode + "\ndef func(input):\n"
 
-    # Insert function code
+    lines = bodyCode.split("\n")
 
     for line in lines:
-        code += "\n    " + line
+        code += "    " + line + "\n"
 
     # If exec gets two separate objects as globals and locals, the code will be executed
     # as if it were embedded in a class definition -> Use same, empty loc

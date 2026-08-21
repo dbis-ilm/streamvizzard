@@ -6,7 +6,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _HTTPGet extends Definition {
     constructor(pathIdentifier){
-        super("HTTPGet", "HTTP Get", pathIdentifier, true);
+        super("HTTPGet", "HTTP Get", pathIdentifier,
+            "Fetches data from a HTTP GET endpoint in fixed intervals.", true);
     }
 
     build(operator) {

@@ -1,10 +1,10 @@
 import {EVENTS, registerEvent} from "@/scripts/tools/EventHandler";
 import {SvInstance} from "@/scripts/StreamVizzard";
 import {Services} from "@/scripts/services/Services";
-import {HEATMAP} from "@/scripts/features/monitor/Monitor";
 import {safeVal} from "@/scripts/tools/Utils";
 import {getStrategyByName} from "@/scripts/features/compiler/CompileStrategies";
 import {matchOtherClusterSideConType} from "@/scripts/features/compiler/CompileUtils";
+import {HEATMAP} from "@/scripts/features/monitor/Heatmap";
 
 export default class Compiler {
     constructor() {
@@ -55,14 +55,14 @@ export default class Compiler {
 
         this.loading = true;
 
-        Services.Network.startCompileMode(data).then((res) => {
-            this.loading = false;
-
+        Services.Network.startCompileMode(data).then(() => {
+            this.initialized = true;
+        }).catch((res) => {
             if(res == null) this.errorMessage = "Couldn't connect to the server!";
-            else if(res["res"] === false) this.errorMessage = "Couldn't start compile mode:<br><i>" + res["error"] + "</i>";
+            else this.errorMessage = "Couldn't start compile mode:<br><i>" + res.error + "</i>";
 
-            this.initialized = res != null;
-        });
+            this.initialized = false;
+        }).finally(() => { this.loading = false; });
     }
 
     endCompileMode() {
@@ -72,7 +72,7 @@ export default class Compiler {
 
         this._reset();
 
-        SvInstance.monitor.showHeatmap(HEATMAP.NONE);
+        SvInstance.monitor.heatmap.show(HEATMAP.NONE);
 
         Services.Network.endCompileMode();
     }
@@ -92,14 +92,6 @@ export default class Compiler {
         this.loading = true;
 
         Services.Network.compileAnalyze(data).then((res) => {
-            if(res == null || res === false) {
-                this.loading = false;
-                this.analyzed = false; // Only set to false again if analyze failed!
-                this.errorMessage = "Couldn't analyze pipeline!";
-
-                return;
-            }
-
             let missingExStats = false;
 
             for(let r of res["opData"]) {
@@ -125,14 +117,14 @@ export default class Compiler {
 
             this.canCompile = res["canCompile"];
             this.analyzed = true;
-            this.errorMessage = res["error"];
 
-            if(missingExStats) this.errorMessage = (this.errorMessage != null ? this.errorMessage + "<br>" : "")
-                + "<span class='warningMsg' title='To improve the quality of the compilation process, first execute the pipeline with activated \"Settings/Monitor/Track Stats\" to gather execution stats!'>ExecutionStats missing for some operators!</span>";
+            if(missingExStats) this.errorMessage = "<span class='warningMsg' title='To improve the quality of the compilation process, first execute the pipeline with activated \"Settings/Monitor/Track Stats\" to gather execution stats!'>ExecutionStats missing for some operators!</span>";
 
             if(res["statusMsg"]) this.successMessage = res["statusMsg"];
-            this.loading = false;
-        });
+        }).catch((res) => {
+            this.analyzed = res != null; // Only set to false again if analyze failed!
+            this.errorMessage = res?.error;
+        }).finally(() => { this.loading = false; });
     }
 
     compilePipeline() {
@@ -146,16 +138,11 @@ export default class Compiler {
         let data = {"opCompileConfigs": this._collectConfigs(), "compileConfig": this.compileSettings.getStrategyData()};
 
         Services.Network.compilePipeline(data).then((res) => {
-            this.loading = false;
-
+            this.successMessage = "Compilation successful!<br><div class='compileGenResPath limitedText' title='" + res['output'] + "'>" + res['output'] + "</div>";
+        }).catch((res) => {
             if(res == null) this.errorMessage = "Couldn't compile the pipeline!";
-            else {
-                this.errorMessage = res["errorMsg"];
-
-                // statusMsg contains output path of compiled files
-                if(res["success"]) this.successMessage = "Compilation successful!<br><div class='compileGenResPath limitedText' title='" + res['statusMsg'] + "'>" + res['statusMsg'] + "</div>";
-            }
-        });
+            else this.errorMessage = res.error;
+        }).finally(() => { this.loading = false; });
     }
 
     isActive() {
@@ -186,7 +173,7 @@ export default class Compiler {
             op.monitor.heatmapRating = rating;
         }
 
-        SvInstance.monitor.showHeatmap(HEATMAP.COMPILE, false);
+        SvInstance.monitor.heatmap.show(HEATMAP.COMPILE, false);
     }
 
     _collectConfigs() {

@@ -1,11 +1,13 @@
 <template>
-  <div class="heatmapContainer">
-    <div id="heatmapStats" class="heatmapComponent" v-if="hmType > 1">
+  <div class="heatmapContainer" :style="'left: ' + ($streamvizzard.interface.opPresetBarViewRect.right - 2) + 'px'">
+    <div id="heatmapStats" class="heatmapComponent" v-if="$streamvizzard.monitor.heatmap.isExStats()">
       <div style="text-align: left;"><b>Operator Heatmap</b></div>
-      <div style="text-align:left; margin-top:10px;">{{title}}</div>
+      <v-select v-auto-blur :clearable="false" :searchable="false" :options="modeOptions" class="formInputField modeOptions"
+                :reduce="mode => mode.key" :value="$streamvizzard.monitor.heatmap.type" @input="_onModeSelected($event)"/>
       <div class="heatmapGradient" ref="gradient">
-        <div class="heatmapLegendMark" style="top:-0.2em; left:48px;">{{minVal}}</div>
-        <div class="heatmapLegendMark" style="bottom:-0.2em; left:48px;">{{maxVal}}</div>
+        <div class="heatmapUnit">{{title}}</div>
+        <div class="heatmapLegendMark" style="top:-0.2em; left:48px;">{{$streamvizzard.monitor.heatmap.min.toFixed(2)}}</div>
+        <div class="heatmapLegendMark" style="bottom:-0.2em; left:48px;">{{$streamvizzard.monitor.heatmap.max.toFixed(2)}}</div>
         <div ref="heatmapLegendSteps" id="heatmapLegendSteps" style="left:48px;">
           <div class="hmLegendStep" v-for="step in stepData" :key="step['id']" v-show="step['visible']"
                :style="'position:absolute; top: calc(' + step['pos'] + 'px - 0.5em)'">{{ step["val"] }}</div>
@@ -16,32 +18,39 @@
 </template>
 
 <script>
-import {HEATMAP} from "@/scripts/features/monitor/Monitor";
+
+import {HEATMAP} from "@/scripts/features/monitor/Heatmap";
 
 export default {
-  props: {
-    hmType: {type: Number, required: true},
-  },
-
   data() {
     return {
-      minVal: "0",
-      maxVal: "0",
-
       stepData: [],
+      modeOptions: [
+        {"key": HEATMAP.EXECUTION_TIME, "label": "Execution Time"},
+        {"key": HEATMAP.DATA_SIZE, "label": "Output Size"},
+        {"key": HEATMAP.THROUGHPUT, "label": "Throughput"},
+        {"key": HEATMAP.DISPLAY_FETCH_TIME, "label": "Display Fetch"},
+        {"key": HEATMAP.DISPLAY_RENDER_TIME, "label": "Display Render"}
+      ]
     }
   },
 
   computed: {
-    heatmapData() {
-      return this.$streamvizzard.monitor.heatmapData;
+    heatmapSteps() {
+      return this.$streamvizzard.monitor.heatmap.steps;
     },
 
     title() {
-      if(this.hmType === HEATMAP.DATA_SIZE) {
-        return "Data Size (KB)";
-      } else if(this.hmType === HEATMAP.EXECUTION_TIME) {
-        return "Execution Time (ms)";
+      if(this.$streamvizzard.monitor.heatmap.type === HEATMAP.DATA_SIZE) {
+        return "(KB)";
+      } else if(this.$streamvizzard.monitor.heatmap.type === HEATMAP.EXECUTION_TIME) {
+        return "(ms)";
+      } else if(this.$streamvizzard.monitor.heatmap.type === HEATMAP.THROUGHPUT) {
+        return "(tup/s)";
+      } else if(this.$streamvizzard.monitor.heatmap.type === HEATMAP.DISPLAY_FETCH_TIME) {
+        return "(ms)";
+      } else if(this.$streamvizzard.monitor.heatmap.type === HEATMAP.DISPLAY_RENDER_TIME) {
+        return "(ms)";
       }
 
       return "";
@@ -49,36 +58,22 @@ export default {
   },
 
   watch: {
-    heatmapData() {
-      let data = this.heatmapData;
-
-      if(data != null) this.onDataUpdate(data["min"], data["max"], data["steps"]);
-      else this.onDataUpdate(0, 0, []);
-    }
-  },
-
-  methods: {
-    onDataUpdate(min, max, steps) {
-      this.minVal = min.toFixed(2);
-      this.maxVal = max.toFixed(2);
-
+    heatmapSteps() {
       let gradientHeight = this.$refs.gradient.clientHeight;
 
       let currentStepCount = this.stepData.length;
 
-      if(currentStepCount !== steps.length) {
-        this.stepData = [];
-      }
+      if(currentStepCount !== this.heatmapSteps.length) this.stepData = [];
 
-      for(let i=0; i < steps.length; i++)  {
-        let step = steps[i];
+      for(let i=0; i < this.heatmapSteps.length; i++)  {
+        let step = this.heatmapSteps[i];
         let stepRelVal = step[1];
 
         let stepVal = step[0].toFixed(2);
         let stepPos = Math.round(gradientHeight * step[1]);
         let stepVisible = true;
 
-        if(i === 0 && stepVal === this.minVal) stepVisible = false;  // If it's the first step and has the same as the min value
+        if(i === 0 && step[0] === this.$streamvizzard.monitor.heatmap.min) stepVisible = false;  // If it's the first step and has the same as the min value
         else if(stepRelVal > 0.875 || stepRelVal <= 0.1) stepVisible = false; // If it's to close to the min/max border
 
         let data = {"id": i, "pos": stepPos, "val": stepVal, "visible": stepVisible};
@@ -86,8 +81,14 @@ export default {
         if(i < currentStepCount) this.stepData[i] = data;
         else this.stepData.push(data);
       }
-    }
+    },
   },
+
+  methods: {
+    _onModeSelected(hmType) {
+      this.$streamvizzard.monitor.heatmap.show(hmType);
+    }
+  }
 }
 
 </script>
@@ -95,19 +96,34 @@ export default {
 <style scoped>
 
 .heatmapContainer {
+  min-width: 150px;
   position:absolute;
-  top:-2px;
-  left: 14px;
-  padding: 0 4px;
+  top: -2px;
+  padding: 2px 8px;
   background: white;
   border: 2px solid var(--main-border-color);
   border-radius: var(--window-border-radius);
+  cursor: default;
+}
+
+.heatmapContainer .modeOptions {
+  padding-top: 5px;
+  margin-bottom: 30px;
 }
 
 .heatmapLegendMark, #heatmapLegendSteps {
   text-align:left;
   white-space: nowrap;
   position: absolute;
+}
+
+.heatmapContainer .heatmapUnit {
+  text-align: center;
+  position: absolute;
+  top: -25px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
 }
 
 .heatmapGradient {

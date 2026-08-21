@@ -106,7 +106,6 @@ export class Debugger {
      *  @param {Boolean|null} undo Null if normal execution, else true for undo, false for redo**/
     async onStepExecuted(step, undo) {
         // Called during traversing or breakpoint triggering
-
         if(this.onStepExecutedCb != null) await this.onStepExecutedCb(step);
 
         if(this.enableStepNotifications) {
@@ -176,6 +175,8 @@ export class Debugger {
                 "targetBranch": targetBranch,
             }).then(function (data) {
                 callback(data["branchID"], data["stepID"]);
+            }).catch(function () {
+                // Invalid debugging state
             });
         }
     }

@@ -1,5 +1,4 @@
-import json
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 from spe.pipeline.operators.base.dataTypes.window import Window
 from spe.pipeline.operators.base.operators.windows.windowOperator import WindowOperator
@@ -20,7 +19,7 @@ class TumblingWindowCount(WindowOperator):
 
         self.buffer: List[Tuple] = list()
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
         self.value = int(data["value"])
 
     def getData(self) -> dict:
@@ -33,16 +32,15 @@ class TumblingWindowCount(WindowOperator):
             self._onDebugEx(tupleIn)
 
         if len(self.buffer) >= self.value:
-            r = Window(self.buffer.copy())
-            self.buffer.clear()
+            r = Window(self.buffer)
+            self.buffer = []
 
-            tup = self.createTuple((r,))
-
-            return tup
+            return self.createTuple((r,))
 
         return None
 
     # ----------------------------- DEBUGGING -----------------------------
+
     def _onDebugEx(self, tupleIn: Tuple):
         if len(self.buffer) < self.value:  # Only store tuple if it does not complete the buffer
             self._getExecuteDT().registerAttribute("opEx_addedTup", tupleIn.uuid)

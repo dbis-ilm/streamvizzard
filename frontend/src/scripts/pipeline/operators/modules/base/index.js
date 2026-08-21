@@ -31,7 +31,7 @@ export const numSocket = new SocketType("Number");
 export const boolSocket = new SocketType("Boolean");
 export const strSocket = new SocketType("String");
 export const arraySocket = new SocketType("Array");
-export const windowSocket = new SocketType("Window");
+export const windowSocket = new SocketType("Window", true);
 
 let getSockets = () => {
     return [numSocket, boolSocket, strSocket, arraySocket, windowSocket];
@@ -39,24 +39,31 @@ let getSockets = () => {
 
 //MONITOR DATA TYPES
 
+export const NONE_DT = new MonitorDataType("NONE", "Empty Data");
+NONE_DT.registerDisplayMode(new MonitorDisplayMode(0, "Raw", DT_Literal));
+
 export const NUMBER_DT = new MonitorDataType("NUMBER", "Number");
 NUMBER_DT.registerDisplayMode(new MonitorDisplayMode(0, "Raw", DT_Literal));
-NUMBER_DT.registerDisplayMode(new MonitorDisplayMode(1, "Time-Series", DT_Scatterplot, {"useBuffer": true, "maxBufferElements": 25, "xvisible": false}));
+NUMBER_DT.registerDisplayMode(new MonitorDisplayMode(1, "Time-Series", DT_Scatterplot, {
+    "useBuffer": true,
+    "xtitle": "Δs",
+    "xvisible": true
+}));
 
 export const STRING_DT = new MonitorDataType("STRING", "String");
 STRING_DT.registerDisplayMode(new MonitorDisplayMode(0, "Raw", DT_Literal));
 STRING_DT.registerDisplayMode(new MonitorDisplayMode(1, "Length", DT_Literal));
 
-export const ARRAY_NUMBER_DT = new MonitorDataType("ARRAY_NUMBER", "Num Array")
-ARRAY_NUMBER_DT.registerDisplayMode(new MonitorDisplayMode(0, "Count", DT_Literal));
-ARRAY_NUMBER_DT.registerDisplayMode(new MonitorDisplayMode(1, "Time-Series", DT_Scatterplot, {"useXDif": true, "xtitle": "Tuple #"}));
+export const ARRAY_NUMBER_DT = new MonitorDataType("ARRAY_NUMBER", "Number Array")
+ARRAY_NUMBER_DT.registerDisplayMode(new MonitorDisplayMode(0, "Count", DT_Literal, {"exp": "'Array [' + $VAL + ' Numbers]'"}));
+ARRAY_NUMBER_DT.registerDisplayMode(new MonitorDisplayMode(1, "Time-Series", DT_Scatterplot, {"xtitle": "Tuple #"}));
 
-export const WINDOW_NUMBER_DT = new MonitorDataType("WINDOW_NUMBER", "Num Window")
-WINDOW_NUMBER_DT.registerDisplayMode(new MonitorDisplayMode(0, "Count", DT_Literal));
-WINDOW_NUMBER_DT.registerDisplayMode(new MonitorDisplayMode(1, "Time-Series", DT_Scatterplot, {"useXDif": true, "xtitle": "Tuple #"}));
+export const DICT_INSPECT_DT = new MonitorDataType("DICT_INSPECT", "Dictionary Inspect");
+export const ARRAY_INSPECT_DT = new MonitorDataType("ARRAY_INSPECT", "List Inspect");
+export const TUPLE_INSPECT_DT = new MonitorDataType("TUPLE_INSPECT", "Tuple Inspect");
 
 let getDataTypes = () => {
-    return [NUMBER_DT, STRING_DT, ARRAY_NUMBER_DT, WINDOW_NUMBER_DT];
+    return [NONE_DT, NUMBER_DT, STRING_DT, ARRAY_NUMBER_DT, DICT_INSPECT_DT, ARRAY_INSPECT_DT, TUPLE_INSPECT_DT];
 }
 
 // -------------------------------------------------------------------------

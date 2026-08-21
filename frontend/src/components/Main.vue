@@ -40,11 +40,8 @@
               <hsc-menu-item label="Monitor">
                 <hsc-menu-item title="If the pipeline monitor should be enabled to visualize processed data and statistics"
                                label="Enabled" v-model="$streamvizzard.monitor.enabled" :sync="true" />
-                <hsc-menu-item label="Heatmap">
-                  <hsc-menu-item label="Disabled" :sync="true" type="checkbox" :checked="$streamvizzard.monitor.heatmapType === HEATMAP.NONE" @click="$streamvizzard.monitor.showHeatmap(HEATMAP.NONE);"/>
-                  <hsc-menu-item label="Data Size" :sync="true" type="checkbox" :checked="$streamvizzard.monitor.heatmapType === HEATMAP.DATA_SIZE" @click="$streamvizzard.monitor.showHeatmap(HEATMAP.DATA_SIZE);"/>
-                  <hsc-menu-item label="Execution Time" :sync="true" type="checkbox" :checked="$streamvizzard.monitor.heatmapType === HEATMAP.EXECUTION_TIME" @click="$streamvizzard.monitor.showHeatmap(HEATMAP.EXECUTION_TIME);"/>
-                </hsc-menu-item>
+                <hsc-menu-item label="Heatmap" :checked="$streamvizzard.monitor.heatmap.isExStats()"
+                               @click="$streamvizzard.monitor.heatmap.toggleExStats();" :sync="true"/>
                 <hsc-menu-item title="If detailed statistics for the operator execution should be tracked and stored. For most reliable execution results, the pipeline should be executed with the highest possible source data rates. Moreover, a longer pipeline execution duration reduces the impact of execution fluctuations."
                                label="Track Stats" v-model="$streamvizzard.monitor.trackStats" :sync="true" />
               </hsc-menu-item>
@@ -137,11 +134,11 @@ import CompilePipelineWindow from "@/components/features/compiler/CompilePipelin
 import {PIPELINE_STATUS} from "@/scripts/pipeline/Pipeline";
 import {TestUtils} from "@/scripts/tools/TestUtils";
 import {AutoLayoutPipeline} from "@/scripts/tools/AutoLayoutPipeline";
-import {HEATMAP} from "@/scripts/features/monitor/Monitor";
 import {Services} from "@/scripts/services/Services";
 import {SvInstance} from "@/scripts/StreamVizzard";
 import EditorContainer from "@/components/editor/EditorContainer.vue";
 import {MODALS} from "@/scripts/interface/Interface";
+import {HEATMAP} from "@/scripts/features/monitor/Heatmap";
 
 export default {
   components: {
@@ -176,7 +173,7 @@ export default {
       this.$streamvizzard.interface.closeAllModals();
       this.$streamvizzard.pipeline.errorMsg = null;
 
-      this.$streamvizzard.monitor.showHeatmap(HEATMAP.NONE);
+      this.$streamvizzard.monitor.heatmap.show(HEATMAP.NONE);
       this.$streamvizzard.debugger.enabled = false;
 
       this.$streamvizzard.compiler.startCompileMode();
@@ -209,8 +206,8 @@ export default {
 
         SvInstance.pipeline.setPipelineStatus(PIPELINE_STATUS.STARTING);
 
-        Services.Network.startPipeline(data).then((res) => {
-          if ((res === null || !res["res"]) && SvInstance.pipeline.isPipelineStarting()) SvInstance.pipeline.setPipelineStatus(PIPELINE_STATUS.STOPPED);
+        Services.Network.startPipeline(data).catch((res) => {
+          if(SvInstance.pipeline.isPipelineStarting()) SvInstance.pipeline.setPipelineStatus(PIPELINE_STATUS.STOPPED);
 
           this.$streamvizzard.pipeline.errorMsg = res?.error;
         });

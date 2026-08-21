@@ -1,13 +1,11 @@
 from __future__ import annotations
-import json
 import threading
 import time
 from threading import Thread
 from typing import Dict, Optional, TYPE_CHECKING
 
-from network.socketTuple import SocketTuple, OperatorSocketTuple, HeatmapSocketTuple, ConnectionSocketTuple, \
-    MessageBrokerSocketTuple
-from spe.runtime.monitor.dataProtocol import createHeatmapData
+from network.socketTuple import OperatorSocketTuple, ConnectionSocketTuple, MessageBrokerSocketTuple
+from spe.common.serialization.jsonSerialization import fastSerializeToJSONBytes
 from spe.runtime.monitor.pipelineDataAnalyzer import PipelineDataAnalyzer
 from spe.common.runtimeService import RuntimeService
 from streamVizzard import StreamVizzard
@@ -21,14 +19,10 @@ class PipelineMonitor(RuntimeService):
     def __init__(self, runtimeManager: RuntimeManager, serverManager: ServerManager):
         super().__init__(runtimeManager, serverManager)
 
-        from spe.runtime.monitor.heatmap import Heatmap
         from spe.pipeline.operators.operator import Operator
         from spe.pipeline.connection import Connection
 
         self._enabled = False  # Enabled = Sending data | False = Still tracking data (errors always send)
-
-        self._heatmap = Heatmap()
-        self._heatmapSendState: Optional[HeatmapSocketTuple] = None
 
         self._thread = Thread(target=self._threadFunction, daemon=True)
         self._executeThread = True
@@ -54,8 +48,6 @@ class PipelineMonitor(RuntimeService):
             self._pipelineAnalyzer.initialize(self.getPipeline())
 
     def onPipelineStopped(self):
-        self._heatmap.changeType(0)
-
         self._updatedOperators.clear()
         self._updatedConnections.clear()
         self._messageBrokerUpdates.clear()
@@ -78,7 +70,7 @@ class PipelineMonitor(RuntimeService):
         # Always send errors, also if monitor is disabled
         # Send error message independent of pipeline state (errors might occur on startup)
 
-        self.serverManager.sendSocketData(json.dumps({"cmd": "opError", "op": operator.id, "error": errorMsg}))
+        self.serverManager.sendSocketData(fastSerializeToJSONBytes({"cmd": "opError", "op": operator.id, "error": errorMsg}))
 
     def onTupleTransmitted(self, connection):
         if not self._shouldSendMonitorData():
@@ -102,9 +94,8 @@ class PipelineMonitor(RuntimeService):
         self._connectionSendState.clear()
 
         self._messageBrokerTuple = None
-        self._heatmapSendState = None
 
-    def changeConfig(self, enabled: bool, trackStats: bool, heatmapType: int):
+    def changeConfig(self, enabled: bool, trackStats: bool):
         self._enabled = enabled
 
         if not self._enabled:  # Flush remaining data in case we disable monitor
@@ -113,8 +104,6 @@ class PipelineMonitor(RuntimeService):
 
         if self._pipelineAnalyzer is not None:
             self._pipelineAnalyzer.changeConfig(trackStats, self.getPipeline())
-
-        self._heatmap.changeType(heatmapType)
 
     def isTrackingStats(self):
         return self._pipelineAnalyzer is not None and self._pipelineAnalyzer.isTracking()
@@ -135,8 +124,6 @@ class PipelineMonitor(RuntimeService):
         if not self.isPipelineRunning():
             return
 
-        # TODO: BATCH MESSAGES TOGETHER?
-
         # SEND UPDATED OPERATORS
 
         with self._updatedOperatorLock:
@@ -150,7 +137,6 @@ class PipelineMonitor(RuntimeService):
                 else:
                     ...  # Not required since getData call with get most recent operator data
 
-            hasNewData = len(self._updatedOperators) > 0
             self._updatedOperators.clear()
 
         # SEND UPDATED CONNECTIONS
@@ -178,18 +164,6 @@ class PipelineMonitor(RuntimeService):
                 else:
                     self._messageBrokerTuple.operators = list(self._messageBrokerUpdates.keys())
 
-        # CALCULATE AND SEND HEATMAP
-
-        if hasNewData and self._heatmap.isRequested():
-            heatmap = self._heatmap.calculate(self.runtimeManager.getPipeline())
-
-            if heatmap is not None and heatmap.hasData():
-                if self._heatmapSendState is None:
-                    self._heatmapSendState = HeatmapSocketTuple(createHeatmapData(heatmap), self._onHMTupleSend)
-                    self.serverManager.sendSocketData(self._heatmapSendState)
-                else:
-                    self._heatmapSendState.setData(createHeatmapData(heatmap))
-
     def _onOpTupleSend(self, st: OperatorSocketTuple):
         self._operatorSendState.pop(st.operator, None)
 
@@ -203,6 +177,3 @@ class PipelineMonitor(RuntimeService):
         with self._updateMessageBrokerLock:
             self._messageBrokerUpdates.clear()
             self._messageBrokerTuple = None
-
-    def _onHMTupleSend(self, st: SocketTuple):
-        self._heatmapSendState = None

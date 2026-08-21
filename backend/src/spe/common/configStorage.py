@@ -109,7 +109,7 @@ class ConfigStorage:
             return False
 
     @staticmethod
-    def deleteStoredOperator(name: str) -> Optional[bool]:
+    def deleteStoredOperator(name: str) -> bool:
         path = ConfigStorage._retrieveOperatorStoragePath()
 
         removed = False
@@ -143,7 +143,7 @@ class ConfigStorage:
                     removed = True
 
         except IOError:
-            return None
+            return False
 
         return removed
 

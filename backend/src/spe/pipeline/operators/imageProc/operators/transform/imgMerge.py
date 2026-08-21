@@ -1,14 +1,14 @@
-import json
-from typing import Optional
+from typing import Optional, Dict
 
 import cv2
 import numpy as np
 
-from spe.pipeline.operators.imageProc.dataTypes.image import Image
+from spe.pipeline.operators.imageProc.dataTypes.image import Image, ImageType
 from spe.pipeline.operators.operator import Operator
 from spe.common.tuple import Tuple
 
 
+@Operator.requiresInput(ImageType())
 class ImgMerge(Operator):
     """
     Inputs: 4
@@ -18,7 +18,7 @@ class ImgMerge(Operator):
     def __init__(self, opID: int):
         super(ImgMerge, self).__init__(opID, 4, 1)
 
-    def setData(self, data: json):
+    def setData(self, data: Dict):
         ...
 
     def getData(self) -> dict:

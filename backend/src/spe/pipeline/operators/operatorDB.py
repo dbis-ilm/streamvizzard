@@ -6,10 +6,12 @@ from typing import TYPE_CHECKING
 import string
 from typing import Dict, Optional, List, Type
 
+from spe.common.dataType import DataType
 from utils.utils import parseBool
 
 if TYPE_CHECKING:
-    from spe.pipeline.operators.module import Module, MonitorDataType
+    from spe.pipeline.operators.module import Module
+    from spe.runtime.monitor.dataDisplayType import DataDisplayType
     from spe.pipeline.operators.operator import Operator
     from spe.runtime.advisor.advisorStrategy import AdvisorStrategy
 
@@ -53,12 +55,22 @@ def getPathByOperator(operator: Type[Operator]) -> Optional[str]:
     return None
 
 
-def getDisplayDataType(data) -> Optional[MonitorDataType]:
+def getDisplayDataType(dataType: DataType) -> Optional[DataDisplayType]:
+    # First search for regular monitorData types that can be displayed directly
+
     for module in __modules.values():
-        displayType = module.getMonitorDataType(data)
+        displayType = module.getMonitorDataType(dataType)
 
         if displayType is not None:
             return displayType
+
+    # As fallback search for inspect types
+
+    for module in __modules.values():
+        inspectType = module.getMonitorInspectType(dataType)
+
+        if inspectType is not None:
+            return inspectType
 
     return None
 

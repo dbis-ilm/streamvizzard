@@ -7,7 +7,8 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _Canny extends Definition {
     constructor(pathIdentifier){
-        super("Canny", "Canny", pathIdentifier);
+        super("Canny", "Canny", pathIdentifier,
+            "Detects edges in the input grayscale image.");
     }
 
     build(operator) {

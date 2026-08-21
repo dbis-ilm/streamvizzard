@@ -139,13 +139,17 @@ export default {
       Services.OpPresetService.storePreset(newPreset).then((storedPreset) => {
         if(storedPreset != null) {
           // Delete original conf if we edited it and changed the name
-          if(this.editMode && this.editPreset.name !== newPreset.name) Services.OpPresetService.deletePreset(this.editPreset.name).then();
+          if(this.editMode && this.editPreset.name !== newPreset.name) {
+            Services.OpPresetService.deletePreset(this.editPreset.name).then();
+          }
 
           this.editPreset = newPreset;
 
           this.closeModal();
 
         } else this.errorMessage = "Couldn't store preset!";
+
+        this.$modal.hide('opStorageConfirmModal');
       });
 
       this.loading = false;

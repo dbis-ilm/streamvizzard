@@ -104,6 +104,7 @@ class InteractivePipelineSim(PipelineSimulator):
             instance._simulationTick.waitDuration(exTime)
 
             # TODO: Review (removed from costmodel -> too pipeline-specific)
+            # Should take predicted dataSize as output?
             # dataTransformFunc = opModel.dataTransform if opModel is not None else None
             dataTransformFunc = None
 

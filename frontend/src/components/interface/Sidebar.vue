@@ -1,8 +1,10 @@
 <template>
-  <div id="sidebar" :class="['dock', $streamvizzard.interface.showSidebar && 'opened']">
+  <div id="sidebar" :class="['dock right', $streamvizzard.interface.showSidebar && 'opened']" v-track-dom-rect="$streamvizzard.interface.sidebarViewRect">
     <div class="opContent" v-if="operator != null" v-show="$streamvizzard.interface.showSidebar">
-      <div class="title limitedText" :title="'Operator: ' + operator.definition.displayName">{{ operator.name }}
-        <span class="titleID" :title="operator.uuid">{{ operator.id }}</span>
+      <div class="header">
+        <span class="info" :title="'Operator Information\nID: ' + operator.id + '\nUUID: ' + operator.uuid + '\nClass: ' + operator.definition.displayName + '\n' + operator.definition.description"><i class="bi bi-info-circle"></i></span>
+        <span class="opName limitedText">{{ operator.name }}</span>
+        <span class="titleID">{{ operator.id }}</span>
         <hr>
       </div>
 
@@ -10,7 +12,7 @@
 
         <div v-if="operator.errorMsg != null" class="sectionOffset errorMsg">
           <div class="sectionHeader">Error</div>
-          <div class="errorContent limitedText" :title="operator.errorMsg">{{ operator.errorMsg }}</div>
+          <div class="errorContent limitedText">{{ operator.errorMsg }}</div>
         </div>
 
         <MonitorSidebarOp :operator="operator" v-if="$streamvizzard.monitor.enabled && !$streamvizzard.compiler.enabled" class="sectionOffset"/>
@@ -23,7 +25,7 @@
       </div>
     </div>
 
-    <div @click="_toggleWindow" :class="'openCloseButton right ' + ($streamvizzard.interface.showSidebar ? 'opened' : 'closed')"
+    <div @click="_toggleWindow" :class="'openCloseButton ' + ($streamvizzard.interface.showSidebar ? 'opened' : 'closed')"
          title="Open/Close the operator sidebar">
       <i :class="'bi ' + ($streamvizzard.interface.showSidebar ? 'bi-caret-right-fill' : 'bi-caret-left-fill')"></i>
     </div>
@@ -97,21 +99,34 @@ export default {
   height: 100%;
 }
 
-#sidebar .title {
+#sidebar .header {
+  position: relative;
   font-weight: bold;
   font-size: 1.1rem;
 
   padding-left: 15px;
   padding-right: 15px;
-  margin-bottom: -10px;
 }
 
-#sidebar .titleID {
+#sidebar .header .info {
   float: right;
   position: absolute;
   right: 6px;
-  font-size: 12px;
-  top: 0;
+  top: -6px;
+}
+
+#sidebar .header .opName {
+  width: 90%;
+  display: inline-block;
+  margin-bottom: -5px;
+}
+
+#sidebar .header .titleID {
+  float: right;
+  position: absolute;
+  right: 6px;
+  font-size: 10px;
+  bottom: 3px;
 }
 
 #sidebar .sidebarContent {

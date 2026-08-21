@@ -1,14 +1,16 @@
 <template>
   <div>
     <CollapseHeader :openedDir="'up'" class="sectionHeader" v-model="$streamvizzard.monitor.showSidebar" title="Monitor">
-      <i :class="'bi bi-file-code' + ($streamvizzard.monitor.showSidebarTransformer ? '-fill' : '') + ' clickableIcon toggleIcon toggleTransformerIcon'"
-         title="Toggle the display data transformer to visualize the produced operator output data in a custom way."
-         v-show="operator.showData" @click="_toggleDataTransformer($event)"></i>
+      <i :class="['bi bi-file-code' + ($streamvizzard.monitor.showSidebarTransformer ? '-fill' : ''), 'clickableIcon toggleIcon toggleTransformerIcon', !operator.showData && 'disabled']"
+         title="Toggle the display data transformer to visualize the produced operator output data in a custom way." @click="_toggleDataTransformer($event)"></i>
       <i :class="'bi bi-bar-chart-line' + ($streamvizzard.monitor.showSidebarStats ? '-fill' : '') + ' clickableIcon toggleIcon toggleStatsIcon'"
-         style="position: relative;" title="Toggle the operator execution statistics" @click="_toggleExecutionStats($event)"></i>
+         title="Toggle the operator execution statistics" @click="_toggleExecutionStats($event)"></i>
+      <i class="bi bi-hourglass-split warningIcon toggleIcon" v-if="operator.monitor.executionStats.perfWarning" title="Operator has a performance warning!"></i>
     </CollapseHeader>
 
     <div class="monitorContent" v-show="$streamvizzard.monitor.showSidebar">
+
+      <div class="limitedText warningContent" v-if="operator.monitor.executionStats.perfWarning">{{operator.monitor.executionStats.perfWarning}}</div>
 
       <div v-if="operator.showData">
         <div class="limitedText" v-if="socketOutCount > 0">Display Type: {{ dataType }}</div>
@@ -49,10 +51,9 @@
 
       <ExecutionStats :operator="operator" v-if="$streamvizzard.monitor.showSidebarStats" class="vOffset"/>
 
-      <div v-if="dataStructure != null" class="vOffset">
+      <div v-if="dataStructure != null && operator.showData" class="vOffset">
         <div class="inspectTitle">Data Inspect</div>
-        <StructureInspect ref="structureInspect" class="inspectContainer"
-                          @selected="_onInspectSwitched"></StructureInspect>
+        <StructureInspectElement :data="dataStructure" :entryKey="dataStructure['name']" :parentKey="null" :operator="operator"/>
       </div>
     </div>
   </div>
@@ -61,16 +62,16 @@
 <script>
 
 import CollapseHeader from "@/components/interface/elements/base/CollapseHeader.vue";
-import StructureInspect from "@/components/features/monitor/sidebar/inspect/StructureInspect.vue";
 import Vue from "vue";
 import ExecutionStats from "@/components/features/monitor/sidebar/ExecutionStats.vue";
-import {valueOr} from "@/scripts/tools/Utils";
+import {formatTime, valueOr} from "@/scripts/tools/Utils";
 import {EVENTS, registerEvent, unregisterEvent} from "@/scripts/tools/EventHandler";
 import DataTransformer from "@/components/features/monitor/sidebar/DataTransformer.vue";
 import SvOperator from "@/scripts/pipeline/operators/SvOperator";
+import StructureInspectElement from "@/components/features/monitor/sidebar/StructureInspectElement.vue";
 
 export default {
-  components: {DataTransformer, ExecutionStats, StructureInspect, CollapseHeader},
+  components: {StructureInspectElement, DataTransformer, ExecutionStats, CollapseHeader},
   props: {
     operator: {type: SvOperator, required: true},
   },
@@ -109,10 +110,6 @@ export default {
 
     dataType() {
       this._updateDisplayData();
-    },
-
-    dataStructure() {
-      this._onDataStructureChanged();
     }
   },
 
@@ -129,7 +126,7 @@ export default {
       let dt = this.operator.monitor.displayDataType;
 
       if(dt !== null) return dt.displayName;
-      else return "Unknown";
+      else return "Unknown (" + this.operator.monitor.rawDataType + ")";
     },
 
     dataStructure() {
@@ -138,12 +135,12 @@ export default {
   },
 
   methods: {
+    formatTime,
     _onOpInitialized() {
       this._updateOutSocketCount(this.operator);
 
       this._toggleDisplayModeSettings(false);
       this._updateDisplayData();
-      this._onDataStructureChanged();
       this._onSocketsChanged();
     },
 
@@ -208,7 +205,7 @@ export default {
             const instance = new componentClass({
               propsData: {
                 skey: setting.key, name: setting.name, desc: setting.desc, data: setting.data,
-                default: setting.default, value: setting.value, change: (key, val) => {
+                default: setting.def, value: setting.value, change: (key, val) => {
                   let set = valueOr(Object.assign({}, monitor.displayModeSettings), {}); // Cloned to not modify the orig obj
                   set[key] = val;
                   monitor.updateDisplayModeSettings(set);
@@ -265,23 +262,6 @@ export default {
       else this.displaySocketSelected = null;
     },
 
-    // Inspect
-
-    _onDataStructureChanged() {
-      //Give time to enable the component and set data in next tick
-
-      let self = this;
-
-      Vue.nextTick(function () {
-        if(self.$refs.structureInspect)
-          self.$refs.structureInspect.setStructureData(self.dataStructure);
-      })
-    },
-
-    _onInspectSwitched(dataInspect) {
-      this.operator.monitor.updateDisplayDataInspect(dataInspect);
-    },
-
     // Stats plot
 
     _toggleExecutionStats(event) {
@@ -320,10 +300,7 @@ export default {
 
 .formInputLabel {
   width: 117px;
-}
-
-.formInputField {
-  margin-left: 10px;
+  text-align: left;
 }
 
 .settingsToggle {
@@ -357,6 +334,21 @@ export default {
 
 .toggleTransformerIcon {
   margin-left: 3px;
+}
+
+.warningIcon {
+  color: var(--warning-color);
+  left: 0;
+}
+
+.warningContent {
+  margin-bottom: 5px;
+  white-space: break-spaces;
+  font-style: italic;
+  max-height: 4.2em;
+  overflow-y: auto;
+  overflow-x: hidden;
+  color: var(--warning-color);
 }
 
 </style>

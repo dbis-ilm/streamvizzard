@@ -6,7 +6,8 @@ import {anySocket} from "@/scripts/pipeline/operators/modules";
 
 export default class _SerializeJSON extends Definition {
     constructor(pathIdentifier){
-        super("SerializeJSON", "Serialize JSON", pathIdentifier);
+        super("SerializeJSON", "Serialize JSON", pathIdentifier,
+            "Encodes the input data (Python object) into a JSON String.");
     }
 
     build(operator) {

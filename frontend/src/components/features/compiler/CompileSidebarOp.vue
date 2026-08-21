@@ -51,7 +51,7 @@
       </div>
 
       <div class="targetStats" title="Desired execution stats for the operator of the selected compilation target.">
-        <CollapseHeader :openedDir="'up'" class="sectionHeader" v-model="$streamvizzard.compiler.showStats" :title="'Requested Statistics'"></CollapseHeader>
+        <CollapseHeader :openedDir="'up'" class="sectionHeader" v-model="$streamvizzard.compiler.showStats" :title="'Assumed Statistics'"></CollapseHeader>
 
         <CompileTargetStats v-show="$streamvizzard.compiler.showStats" :targetStats="config.targetStats"
                             :class="[$streamvizzard.compiler.loading && 'disabled noSelect']" @change="_onConfigChanged"/>

@@ -6,14 +6,15 @@ import {SocketDef} from "@/scripts/pipeline/SvSocket";
 
 export default class _Combine extends Definition {
     constructor(pathIdentifier){
-        super("Combine", "Combine", pathIdentifier);
+        super("Combine", "Combine", pathIdentifier,
+            "Combines the data from the input sockets into one output tuple.");
     }
 
     build(operator) {
-        let ins = new NumberParam("ins", 1,0, null, "Inputs");
+        let ins = new NumberParam("ins", 1,2, null, "Inputs");
 
         this._construct(operator,
-            [new SocketDef(anySocket)],
+            [new SocketDef(anySocket), new SocketDef(anySocket)],
             [new SocketDef(anySocket)],
             [ins]
         );

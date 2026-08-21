@@ -55,9 +55,11 @@ export default class SvConnection extends TemplateHost {
         const points = [{ x: x1, y: y1 }, ...prevReroutes, { x: x2, y: y2 }];
         const index = findRightIndex(pin, points);
 
-        this.reroutes.splice(index, 0, pin);
+        this.reroutes.splice(index, 0, newPin);
 
         executeEvent(EVENTS.CONNECTION_REROUTES_CHANGED, [this, prevReroutes]);
+
+        return newPin;
     }
 
     /** @param {ReroutePin} pin The pin object to remove
@@ -70,7 +72,7 @@ export default class SvConnection extends TemplateHost {
         pin.x = newX;
         pin.y = newY;
 
-        executeEvent(EVENTS.CONNECTION_REROUTES_CHANGED, [this, prevReroutes, cascaded]);
+        executeEvent(EVENTS.CONNECTION_REROUTES_MOVED, [pin, prevReroutes, cascaded]);
     }
 
     /** @param {ReroutePin} pin The pin object to remove **/
